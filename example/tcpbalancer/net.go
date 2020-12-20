@@ -77,14 +77,13 @@ func (u *Upstream) connect() chan struct{} {
 	return ch
 }
 
-func upstreamResolver(j job.Job) (func(), func() interface{}, func()) {
-	return nil, func() interface{} {
+func connListener(j job.Job) (func(), func() interface{}, func()) {
+	var plis *net.TCPListener
+	init := func() {
 		balancer := j.GetValue().(*TcpBalancer)
 		for _, v := range CliOptions.UpstreamServers {
 			tcpAddr, err := net.ResolveTCPAddr("tcp4", v)
-			if err != nil {
-				continue
-			}
+			j.Assert(err)
 			s := &Server{}
 			sn := &ServerNet{
 				Server:  s,
@@ -92,13 +91,6 @@ func upstreamResolver(j job.Job) (func(), func() interface{}, func()) {
 			}
 			balancer.UpstreamServers = append(balancer.UpstreamServers, sn)
 		}
-		return true
-	}, func() { }
-}
-
-func connListener(j job.Job) (func(), func() interface{}, func()) {
-	var plis *net.TCPListener
-	init := func() {
 		tcpAddr, err := net.ResolveTCPAddr("tcp4", ":" + strconv.Itoa(CliOptions.Port))
 		if err != nil {
 			fmt.Printf("Failed %v %s\n", CliOptions.Port, strconv.Itoa(CliOptions.Port))

@@ -209,7 +209,9 @@ func (j *job) Cancel() {
 	j.state = Cancelling
 
 	for _, cancel := range j.cancelTasks {
-		go cancel()
+		if cancel != nil {
+			go cancel()
+		}
 	}
 
 	j.state = Cancelled
