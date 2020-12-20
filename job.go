@@ -1,6 +1,7 @@
 package job
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,7 +34,7 @@ type Job interface {
 	Assert(err interface{})
 	GetError() chan interface{}
 	GetFailedTasksNum() int32
-
+	GetValue() interface{}
 	GetState() JobState
 	// Helper methods to GetState
 	IsRunning() bool
@@ -181,6 +182,7 @@ func (j *job) Run() chan struct{} {
 		for {
 			if j.runningTasksCounter == 0 && j.state == Running {
 				j.state = Done
+				fmt.Printf("Done job\n")
 				j.doneChan <- struct{}{}
 				return
 			}
@@ -226,10 +228,7 @@ func (j *job) GetFailedTasksNum() int32 {
 	return j.failedTasksCounter
 }
 
-//
-// Mutators methods
-//
-func (j *job) Value() interface{} {
+func (j *job) GetValue() interface{} {
 	return j.value
 }
 
