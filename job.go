@@ -1,7 +1,6 @@
 package job
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,7 +21,7 @@ func (s JobState) String() string {
 	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled", "Done"}[s]
 }
 
-type JobTask func(j Job) (func() interface{}, func())
+type JobTask func(j Job) (func(), func() interface{}, func())
 
 type Job interface {
 	AddTask(job JobTask) *TaskInfo
@@ -122,7 +121,7 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 	taskInfo.index = len(j.tasks)
 	taskInfo.result =  make(chan interface{}, 1)
 	taskBody := func() {
-		run, cancel := task(j)
+		init, run, cancel := task(j)
 		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
 			defer func() {
@@ -131,7 +130,9 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 					atomic.AddInt32(&j.failedTasksCounter, 1)
 				}
 			}()
-
+			if init != nil {
+				init()
+			}
 			for {
 				result := run()
 				j.stateMu.Lock()
@@ -182,7 +183,6 @@ func (j *job) Run() chan struct{} {
 		for {
 			if j.runningTasksCounter == 0 && j.state == Running {
 				j.state = Done
-				fmt.Printf("Done job\n")
 				j.doneChan <- struct{}{}
 				return
 			}

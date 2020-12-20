@@ -15,8 +15,8 @@ func t(info *j.TaskInfo) {
 	info.GetResult()
 }
 
-func incCounterJob(j j.Job) (func() interface{}, func()) {
-	return func() interface{} {
+func incCounterJob(j j.Job) (func(), func() interface{}, func()) {
+	return func() {  }, func() interface{} {
 		mu.Lock()
 		defer mu.Unlock()
 		counter++
@@ -25,16 +25,16 @@ func incCounterJob(j j.Job) (func() interface{}, func()) {
 }
 
 func squareJob(num int) j.JobTask {
-	return func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
+	return func(j j.Job) (func(), func() interface{}, func()) {
+		return func() { }, func() interface{} {
 			return num * num
 		}, func() { }
 	}
 }
 
 func divideJob(num int, divider int) j.JobTask {
-	return func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
+	return func(j j.Job) (func(), func() interface{}, func()) {
+		return func() {  }, func() interface{} {
 			if divider == 0 {
 				j.Assert("division by zero")
 			}
@@ -44,8 +44,8 @@ func divideJob(num int, divider int) j.JobTask {
 }
 
 func failedIOJob() j.JobTask {
-	return func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
+	return func(j j.Job) (func(), func() interface{}, func()) {
+		return func() { }, func() interface{} {
 			_, err := os.Open("foobar")
 			j.Assert(err)
 			return true
@@ -54,8 +54,8 @@ func failedIOJob() j.JobTask {
 }
 
 func sleepIncCounterJob(sleep time.Duration) j.JobTask {
-	return func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
+	return func(j j.Job) (func(), func() interface{}, func()) {
+		return func() {  }, func() interface{} {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
@@ -85,8 +85,8 @@ func TestPrereq(T *testing.T) {
 	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
 	job := j.NewJob(nil)
 	job.WithPrerequisites(p1, p2)
-	job.AddTask(func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
+	job.AddTask(func(j j.Job) (func(), func() interface{}, func()) {
+		return func() {}, func() interface{} {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
