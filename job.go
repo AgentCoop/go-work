@@ -1,6 +1,7 @@
 package job
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -127,6 +128,7 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 			defer func() {
 				atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
+					fmt.Printf("err: %v\n", r)
 					atomic.AddInt32(&j.failedTasksCounter, 1)
 				}
 			}()
