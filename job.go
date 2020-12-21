@@ -1,7 +1,6 @@
 package job
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,6 +30,7 @@ type Job interface {
 	WasTimedOut() bool
 	Run() chan struct{}
 	Cancel()
+	CancelWithError(err interface{})
 	Assert(err interface{})
 	GetError() chan interface{}
 	GetFailedTasksNum() int32
@@ -71,7 +71,7 @@ type job struct {
 	prereqWg    		sync.WaitGroup
 
 	value      			interface{}
-	stateMu 			sync.Mutex
+	stateMu 			sync.RWMutex
 }
 
 func NewJob(value interface{}) *job {
@@ -128,8 +128,18 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 			defer func() {
 				atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
-					fmt.Printf("err: %v\n", r)
+					//fmt.Printf("err: %v\n", r)
 					atomic.AddInt32(&j.failedTasksCounter, 1)
+				}
+				if j.runningTasksCounter == 0 {
+					go func() {
+						j.stateMu.Lock()
+						defer j.stateMu.Unlock()
+						if j.state == Running && j.failedTasksCounter == 0 {
+							j.state = Done
+							j.doneChan <- struct{}{}
+						}
+					}()
 				}
 			}()
 			if init != nil {
@@ -180,17 +190,6 @@ func (j *job) Run() chan struct{} {
 		}()
 	}
 
-	// Dispatches done signal if there are no running tasks
-	go func() {
-		for {
-			if j.runningTasksCounter == 0 && j.state == Running {
-				j.state = Done
-				j.doneChan <- struct{}{}
-				return
-			}
-		}
-	}()
-
 	if j.state == WaitingForPrereq {
 		j.prereqWg.Wait()
 	}
@@ -204,10 +203,11 @@ func (j *job) Run() chan struct{} {
 }
 
 func (j *job) Cancel() {
+	j.stateMu.RLock()
+	if j.state != Running { return }
+	j.stateMu.RUnlock()
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
-
-	if j.state != Running { return }
 	j.state = Cancelling
 
 	for _, cancel := range j.cancelTasks {
@@ -218,6 +218,11 @@ func (j *job) Cancel() {
 
 	j.state = Cancelled
 	j.doneChan <- struct{}{}
+}
+
+func (j *job) CancelWithError(err interface{}) {
+	j.errorChan <- err
+	j.Cancel()
 }
 
 func (j *job) WasTimedOut() bool {
