@@ -32,9 +32,12 @@ func squareJob(num int) j.JobTask {
 	}
 }
 
-func divideJob(num int, divider int) j.JobTask {
+func divideJob(num int, divider int, sleep time.Duration) j.JobTask {
 	return func(j j.Job) (func(), func() interface{}, func()) {
 		return func() {  }, func() interface{} {
+			if sleep > 0 {
+				time.Sleep(sleep)
+			}
 			if divider == 0 {
 				j.Assert("division by zero")
 			}
@@ -101,12 +104,33 @@ func TestPrereq(T *testing.T) {
 
 func TestDone(T *testing.T) {
 	counter = 0
+	nTasks := 1000
 	job := j.NewJob(nil)
-	job.AddTask(incCounterJob)
-	job.AddTask(incCounterJob)
+	for i := 0; i < nTasks; i++ {
+		job.AddTask(sleepIncCounterJob(time.Microsecond * time.Duration(i)))
+	}
 	<-job.Run()
-	if ! job.IsDone() || counter != 2 {
-		T.Fatalf("expected: state %s, counter %d; got: state %s, counter %d\n", j.Done, 2, job.GetState(), counter)
+	if ! job.IsDone() || job.GetFailedTasksNum() != 0 {
+		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
+			j.Done, 0, job.GetState(), job.GetFailedTasksNum())
+	}
+}
+
+func TestCancel(T *testing.T) {
+	counter = 0
+	nTasks := 100
+	job := j.NewJob(nil)
+	for i := 0; i < nTasks; i++ {
+		job.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(100 * i)))
+	}
+	for i := 0; i < nTasks; i++ {
+		job.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(i)))
+	}
+	<-job.Run()
+	time.Sleep(time.Millisecond)
+	if ! job.IsCancelled() || job.GetFailedTasksNum() != uint32(nTasks) {
+		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
+			j.Cancelled, 100, job.GetState(), job.GetFailedTasksNum())
 	}
 }
 
@@ -157,16 +181,16 @@ func TestAssert(T *testing.T) {
 	nTasks := 100
 	job := j.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		job.AddTask(divideJob(9, 3))
-		job.AddTask(divideJob(9, 0))
-		job.AddTask(divideJob(9, 9))
+		job.AddTask(divideJob(9, 3, 0))
+		job.AddTask(divideJob(9, 0, 0))
+		job.AddTask(divideJob(9, 9, 0))
 	}
 	<-job.Run()
 	if ! job.IsCancelled() {
 		T.Fatalf("expected: state %s; got: state %s", j.Cancelled, job.GetState())
 	}
 	time.Sleep(50 * time.Millisecond)
-	if job.GetFailedTasksNum() != int32(nTasks) {
+	if job.GetFailedTasksNum() != uint32(nTasks) {
 		T.Fatalf("expected: %d; got: %d\n", nTasks, job.GetFailedTasksNum())
 	}
 	select {

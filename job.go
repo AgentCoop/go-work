@@ -17,10 +17,11 @@ func (t *TaskInfo) GetJob() Job {
 type job struct {
 	tasks               []func()
 	cancelTasks         []func()
-	failedTasksCounter  int32
+	failedTasksCounter  uint32
 	runningTasksCounter int32
 	state               JobState
 	timedoutFlag        bool
+	withSyncCancel		bool
 	timeout             time.Duration
 
 	errorChan			chan interface{}
@@ -85,7 +86,7 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 			defer func() {
 				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
-					atomic.AddInt32(&j.failedTasksCounter, 1)
+					atomic.AddUint32(&j.failedTasksCounter, 1)
 				}
 				if runCount == 0 {
 					go func() {
@@ -194,7 +195,7 @@ func (j *job) GetError() chan interface{} {
 	return j.errorChan
 }
 
-func (j *job) GetFailedTasksNum() int32 {
+func (j *job) GetFailedTasksNum() uint32 {
 	return j.failedTasksCounter
 }
 

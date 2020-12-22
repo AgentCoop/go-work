@@ -29,7 +29,7 @@ type Job interface {
 	CancelWithError(err interface{})
 	Assert(err interface{})
 	GetError() chan interface{}
-	GetFailedTasksNum() int32
+	GetFailedTasksNum() uint32
 	GetValue() interface{}
 	GetState() JobState
 	// Helper methods to GetState
