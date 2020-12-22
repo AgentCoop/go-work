@@ -6,49 +6,6 @@ import (
 	"time"
 )
 
-type JobState int
-
-const (
-	New JobState = iota
-	WaitingForPrereq
-	Running
-	Cancelling
-	Cancelled
-	Done
-)
-
-func (s JobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled", "Done"}[s]
-}
-
-type JobTask func(j Job) (func(), func() interface{}, func())
-
-type Job interface {
-	AddTask(job JobTask) *TaskInfo
-	WithPrerequisites(sigs ...<-chan struct{}) *job
-	WithTimeout(duration time.Duration) *job
-	WasTimedOut() bool
-	Run() chan struct{}
-	Cancel()
-	CancelWithError(err interface{})
-	Assert(err interface{})
-	GetError() chan interface{}
-	GetFailedTasksNum() int32
-	GetValue() interface{}
-	GetState() JobState
-	// Helper methods to GetState
-	IsRunning() bool
-	IsDone() bool
-	IsCancelled() bool
-}
-
-type TaskInfo struct {
-	index 	int
-	result 	chan interface{}
-	job 	*job
-	err 	interface{}
-}
-
 func (t *TaskInfo) GetResult() chan interface{} {
 	return t.result
 }
@@ -126,12 +83,11 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
 			defer func() {
-				atomic.AddInt32(&j.runningTasksCounter, -1)
+				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
-					//fmt.Printf("err: %v\n", r)
 					atomic.AddInt32(&j.failedTasksCounter, 1)
 				}
-				if j.runningTasksCounter == 0 {
+				if runCount == 0 {
 					go func() {
 						j.stateMu.Lock()
 						defer j.stateMu.Unlock()
@@ -204,8 +160,13 @@ func (j *job) Run() chan struct{} {
 
 func (j *job) Cancel() {
 	j.stateMu.RLock()
-	if j.state != Running { return }
-	j.stateMu.RUnlock()
+	switch j.state {
+	case Running:
+		j.stateMu.RUnlock()
+	default:
+		j.stateMu.RUnlock()
+		return
+	}
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 	j.state = Cancelling
