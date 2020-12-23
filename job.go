@@ -1,6 +1,7 @@
 package job
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,6 +72,16 @@ func (j *job) Assert(err interface{}) {
 			j.Cancel()
 		}()
 		// Now time to panic to stop normal goroutine execution from which Assert method was called.
+		panic(err)
+	}
+}
+
+func (j *job) AssertTrue(cond bool, err string) {
+	if cond {
+		go func() {
+			j.errorChan <- errors.New(err)
+			j.Cancel()
+		}()
 		panic(err)
 	}
 }

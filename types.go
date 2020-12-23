@@ -28,6 +28,7 @@ type Job interface {
 	Cancel()
 	CancelWithError(err interface{})
 	Assert(err interface{})
+	AssertTrue(cond bool, err string)
 	GetError() chan interface{}
 	GetFailedTasksNum() uint32
 	GetValue() interface{}
