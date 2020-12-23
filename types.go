@@ -1,26 +1,41 @@
 package job
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type JobState int
+type TaskType int
 
 const (
 	New JobState = iota
 	WaitingForPrereq
-	Running
+	OneshotRunning
+	RecurrentRunning
 	Cancelling
 	Cancelled
 	Done
 )
 
+const (
+	Oneshot TaskType = iota
+	Recurrent
+)
+
 func (s JobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled", "Done"}[s]
+	return [...]string{"New", "WaitingForPrereq", "Oneshot", "RecurrentRunning", "Cancelling", "Cancelled", "Done"}[s]
+}
+
+func (t TaskType) String() string {
+	return [...]string{"Oneshot", "Recurrent",}[t]
 }
 
 type JobTask func(j Job) (func(), func() interface{}, func())
 
 type Job interface {
 	AddTask(job JobTask) *TaskInfo
+	AddOneshotTask (job JobTask) *TaskInfo
 	WithPrerequisites(sigs ...<-chan struct{}) *job
 	WithTimeout(duration time.Duration) *job
 	WasTimedOut() bool
@@ -32,6 +47,7 @@ type Job interface {
 	GetError() chan interface{}
 	GetFailedTasksNum() uint32
 	GetValue() interface{}
+	SetValue(v interface{})
 	GetState() JobState
 	// Helper methods to GetState
 	IsRunning() bool
@@ -41,7 +57,33 @@ type Job interface {
 
 type TaskInfo struct {
 	index 	int
+	typ TaskType
+	body func()
+	cancel func()
 	result 	chan interface{}
 	job 	*job
 	err 	interface{}
+}
+
+type job struct {
+	tasks               []func()
+	cancelTasks         []func()
+	failedTasksCounter  uint32
+	runningTasksCounter int32
+	state               JobState
+	timedoutFlag        bool
+	withSyncCancel		bool
+	timeout             time.Duration
+
+	cancelMapMu sync.Mutex
+	cancelMap CancelMap
+	oneshotTask			JobTask
+	errorChan			chan interface{}
+	doneChan    		chan struct{}
+	prereqWg    		sync.WaitGroup
+
+	value      			interface{}
+	stateMu 			sync.RWMutex
+
+	taskMap TaskMap
 }

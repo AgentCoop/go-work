@@ -104,7 +104,7 @@ func TestPrereq(T *testing.T) {
 
 func TestDone(T *testing.T) {
 	counter = 0
-	nTasks := 1000
+	nTasks := 10
 	job := j.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
 		job.AddTask(sleepIncCounterJob(time.Microsecond * time.Duration(i)))

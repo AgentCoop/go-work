@@ -2,10 +2,12 @@ package job
 
 import (
 	"errors"
-	"sync"
-	"sync/atomic"
+	"fmt"
 	"time"
 )
+
+type TaskMap map[int]*TaskInfo
+type CancelMap map[int]func()
 
 func (t *TaskInfo) GetResult() chan interface{} {
 	return t.result
@@ -15,28 +17,12 @@ func (t *TaskInfo) GetJob() Job {
 	return t.job
 }
 
-type job struct {
-	tasks               []func()
-	cancelTasks         []func()
-	failedTasksCounter  uint32
-	runningTasksCounter int32
-	state               JobState
-	timedoutFlag        bool
-	withSyncCancel		bool
-	timeout             time.Duration
-
-	errorChan			chan interface{}
-	doneChan    		chan struct{}
-	prereqWg    		sync.WaitGroup
-
-	value      			interface{}
-	stateMu 			sync.RWMutex
-}
-
 func NewJob(value interface{}) *job {
 	j := &job{}
 	j.state = New
 	j.value = value
+	j.taskMap = make(TaskMap)
+	j.cancelMap = make(CancelMap)
 	j.doneChan = make(chan struct{}, 1)
 	return j
 }
@@ -86,59 +72,8 @@ func (j *job) AssertTrue(cond bool, err string) {
 	}
 }
 
-func (j *job) AddTask(task JobTask) *TaskInfo {
-	taskInfo := &TaskInfo{}
-	taskInfo.index = len(j.tasks)
-	taskInfo.result =  make(chan interface{}, 1)
-	taskBody := func() {
-		init, run, cancel := task(j)
-		j.cancelTasks = append(j.cancelTasks, cancel)
-		go func() {
-			defer func() {
-				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
-				if r := recover(); r != nil {
-					atomic.AddUint32(&j.failedTasksCounter, 1)
-				}
-				if runCount == 0 {
-					go func() {
-						j.stateMu.Lock()
-						defer j.stateMu.Unlock()
-						if j.state == Running && j.failedTasksCounter == 0 {
-							j.state = Done
-							j.doneChan <- struct{}{}
-						}
-					}()
-				}
-			}()
-			if init != nil {
-				init()
-			}
-			for {
-				result := run()
-				j.stateMu.Lock()
-				switch {
-				case j.state != Running:
-					j.stateMu.Unlock()
-					taskInfo.result <- result
-					return
-				default:
-					j.stateMu.Unlock()
-				}
-
-				if result != nil {
-					taskInfo.result <- result
-					return
-				}
-			}
-		}()
-	}
-	j.tasks = append(j.tasks, taskBody)
-	return taskInfo
-}
-
-// Concurrently executes all tasks in the job.
-func (j *job) Run() chan struct{} {
-	nTasks := len(j.tasks)
+func (j *job) prerun() {
+	nTasks := len(j.taskMap)
 	j.errorChan = make(chan interface{}, nTasks)
 	j.runningTasksCounter = int32(nTasks)
 	// Start timer that will cancel and mark the job as timed out if needed
@@ -148,7 +83,7 @@ func (j *job) Run() chan struct{} {
 			for {
 				select {
 				case <-ch:
-					if j.state == Running {
+					if j.state == RecurrentRunning {
 						j.timedoutFlag = true
 						j.Cancel()
 					}
@@ -157,37 +92,87 @@ func (j *job) Run() chan struct{} {
 			}
 		}()
 	}
-
 	if j.state == WaitingForPrereq {
 		j.prereqWg.Wait()
 	}
+}
 
-	j.state = Running
+func (j *job) runOneshot() {
+	j.state = OneshotRunning
+	info := j.taskMap[0]
+	info.body()
+	go func() {
+		fmt.Printf("Run oneshot\n")
+		for {
+			select {
+			case success := <- info.result:
+				fmt.Printf("Start the rest")
+				if success != nil {
+					j.runRecurrent()
+				} else {
+					j.doneChan <- struct{}{}
+				}
+				return
+			default:
+				j.stateMu.RLock()
+				switch j.state {
+				case RecurrentRunning:
+					j.stateMu.RUnlock()
+				default:
+					j.stateMu.RUnlock()
+					return
+				}
+			}
+		}
+	}()
+}
 
-	for _, task := range j.tasks {
-		task()
+func (j *job) runRecurrent() {
+	j.state = RecurrentRunning
+	for i, info := range j.taskMap {
+		if i == 0 { // skip oneshot task
+			continue
+		}
+		info.body()
+	}
+}
+
+// Concurrently executes all tasks in the job.
+func (j *job) Run() chan struct{} {
+	j.prerun()
+	if j.hasOneshotTask() {
+		j.runOneshot()
+	} else {
+		j.runRecurrent()
 	}
 	return j.doneChan
 }
 
 func (j *job) Cancel() {
+	//fmt.Printf("[ Cancel %d]\n", j.runningTasksCounter)
 	j.stateMu.RLock()
 	switch j.state {
-	case Running:
+	case RecurrentRunning, OneshotRunning:
 		j.stateMu.RUnlock()
 	default:
 		j.stateMu.RUnlock()
 		return
 	}
+
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
-	j.state = Cancelling
 
-	for _, cancel := range j.cancelTasks {
+	// Run cancel routines
+	j.cancelMapMu.Lock()
+	for idx, cancel := range j.cancelMap {
 		if cancel != nil {
 			go cancel()
+			if idx == 0 && j.state == OneshotRunning { // current task have not been started, no need to cancel
+				break
+			}
 		}
 	}
+	j.cancelMapMu.Unlock()
 
 	j.state = Cancelled
 	j.doneChan <- struct{}{}
@@ -214,12 +199,16 @@ func (j *job) GetValue() interface{} {
 	return j.value
 }
 
+func (j *job) SetValue(v interface{}) {
+	j.value = v
+}
+
 func (j *job) GetState() JobState {
 	return j.state
 }
 
 func (j *job) IsRunning() bool {
-	return j.state == Running
+	return j.state == RecurrentRunning
 }
 
 func (j *job) IsCancelled() bool {
