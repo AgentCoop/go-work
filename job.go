@@ -23,8 +23,13 @@ func NewJob(value interface{}) *job {
 	j.value = value
 	j.taskMap = make(TaskMap)
 	j.cancelMap = make(CancelMap)
-	j.doneChan = make(chan struct{}, 1)
+	j.doneChan = make(chan struct{})
+	j.oneshotDone = make(chan struct{}, 1)
 	return j
+}
+
+func (j *job) done() {
+	j.doneChan <- struct{}{}
 }
 
 // A job won't start until all its prerequisites are met
@@ -102,32 +107,47 @@ func (j *job) runOneshot() {
 	info := j.taskMap[0]
 	info.body()
 	go func() {
-		fmt.Printf("Run oneshot\n")
+		fmt.Printf("Run oneshot %v\n", info)
 		for {
 			select {
 			case success := <- info.result:
-				fmt.Printf("Start the rest")
-				if success != nil {
-					j.runRecurrent()
-				} else {
-					j.doneChan <- struct{}{}
-				}
-				return
-			default:
-				j.stateMu.RLock()
+				fmt.Printf("Got results %v\n",success)
+				j.stateMu.Lock()
+				defer j.stateMu.Unlock()
 				switch j.state {
-				case RecurrentRunning:
-					j.stateMu.RUnlock()
-				default:
-					j.stateMu.RUnlock()
-					return
+				case OneshotRunning:
+					if success != nil {
+						//j.state = RecurrentRunning
+						go j.runRecurrent()
+						//if j.runInBackgroundFlag {
+						//	j.done()
+						//}
+					} else {
+						j.state = Done
+						j.done()
+					}
 				}
+				j.oneshotDone <- struct{}{}
+				return
+			//default:
+			//	j.stateMu.RLock()
+			//	switch j.state {
+			//	case OneshotRunning:
+			//		j.stateMu.RUnlock()
+			//	default:
+			//		j.stateMu.RUnlock()
+			//		return
+			//	}
 			}
 		}
 	}()
 }
 
 func (j *job) runRecurrent() {
+	j.stateMu.Lock()
+	defer j.stateMu.Unlock()
+	fmt.Printf("Run reccurent\n")
+	if j.state == Cancelled { return }
 	j.state = RecurrentRunning
 	for i, info := range j.taskMap {
 		if i == 0 { // skip oneshot task
@@ -145,20 +165,25 @@ func (j *job) Run() chan struct{} {
 	} else {
 		j.runRecurrent()
 	}
+	fmt.Printf("return doneChan\n")
 	return j.doneChan
 }
 
-func (j *job) Cancel() {
-	//fmt.Printf("[ Cancel %d]\n", j.runningTasksCounter)
-	j.stateMu.RLock()
-	switch j.state {
-	case RecurrentRunning, OneshotRunning:
-		j.stateMu.RUnlock()
-	default:
-		j.stateMu.RUnlock()
-		return
-	}
+// Dispatch Done signal as soon as oneshot task finishes itself
+func (j *job) RunInBackground() <-chan struct{} {
+	j.runInBackgroundFlag = true
+	doneDup := make(chan struct{})
+	go func() {
+		j.runOneshot()
+		select {
+		case <- j.oneshotDone:
+			doneDup <- struct{}{}
+		}
+	}()
+	return doneDup
+}
 
+func (j *job) Cancel() {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 
@@ -166,14 +191,12 @@ func (j *job) Cancel() {
 	j.cancelMapMu.Lock()
 	for idx, cancel := range j.cancelMap {
 		if cancel != nil {
-			go cancel()
 			if idx == 0 && j.state == OneshotRunning { // current task have not been started, no need to cancel
 				break
 			}
+			go cancel()
 		}
 	}
-	j.cancelMapMu.Unlock()
-
 	j.state = Cancelled
 	j.doneChan <- struct{}{}
 }

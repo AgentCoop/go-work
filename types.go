@@ -32,6 +32,7 @@ func (t TaskType) String() string {
 }
 
 type JobTask func(j Job) (func(), func() interface{}, func())
+type OneshotTask func(j Job) (func(), func() bool, func())
 
 type Job interface {
 	AddTask(job JobTask) *TaskInfo
@@ -40,6 +41,7 @@ type Job interface {
 	WithTimeout(duration time.Duration) *job
 	WasTimedOut() bool
 	Run() chan struct{}
+	RunInBackground() <-chan struct{}
 	Cancel()
 	CancelWithError(err interface{})
 	Assert(err interface{})
@@ -72,6 +74,7 @@ type job struct {
 	runningTasksCounter int32
 	state               JobState
 	timedoutFlag        bool
+	runInBackgroundFlag bool
 	withSyncCancel		bool
 	timeout             time.Duration
 
@@ -80,6 +83,7 @@ type job struct {
 	oneshotTask			JobTask
 	errorChan			chan interface{}
 	doneChan    		chan struct{}
+	oneshotDone    		chan struct{}
 	prereqWg    		sync.WaitGroup
 
 	value      			interface{}

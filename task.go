@@ -1,7 +1,11 @@
 package job
 
 import (
+	"fmt"
 	"sync/atomic"
+	"time"
+
+	///"time"
 )
 
 func (j *job) hasOneshotTask() bool {
@@ -21,8 +25,9 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 			defer func() {
 				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
-					//fmt.Printf("err : %s\n", r)
+					fmt.Printf("err : %s\n", r)
 					atomic.AddUint32(&j.failedTasksCounter, 1)
+					go j.Cancel()
 				}
 				if runCount == 0 {
 					go func() {
@@ -30,7 +35,7 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 						defer j.stateMu.Unlock()
 						if j.state == RecurrentRunning || j.state == OneshotRunning && j.failedTasksCounter == 0 {
 							j.state = Done
-							j.doneChan <- struct{}{}
+							j.done()
 						}
 					}()
 				}
@@ -39,20 +44,29 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 				init()
 			}
 			for {
+				if failed := atomic.LoadUint32(&j.failedTasksCounter); failed > 0 {
+					return
+				}
 				result := run()
 				j.stateMu.RLock()
 				switch j.state {
+				case OneshotRunning:
+					j.stateMu.RUnlock()
+					taskInfo.result <- result
+					return
 				case RecurrentRunning:
 					j.stateMu.RUnlock()
+					if result != nil {
+						taskInfo.result <- result
+						return
+					}
 				default:
 					j.stateMu.RUnlock()
-					taskInfo.result <- result
 					return
 				}
-				if result != nil {
-					taskInfo.result <- result
-					return
-				}
+				time.Sleep(500 * time.Nanosecond)
+				//fmt.Printf("#task tick\n")
+				//time.Sleep(time.Millisecond)
 			}
 		}()
 	}
@@ -69,5 +83,6 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 
 // Zero index is reserved for oneshot task
 func (j *job) AddOneshotTask(task JobTask) *TaskInfo {
-	return j.createTask(task, 0, Oneshot)
+	taskInfo := j.createTask(task, 0, Oneshot)
+	return taskInfo
 }
