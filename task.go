@@ -3,8 +3,6 @@ package job
 import (
 	"fmt"
 	"sync/atomic"
-	"time"
-
 	///"time"
 )
 
@@ -64,9 +62,6 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					j.stateMu.RUnlock()
 					return
 				}
-				time.Sleep(500 * time.Nanosecond)
-				//fmt.Printf("#task tick\n")
-				//time.Sleep(time.Millisecond)
 			}
 		}()
 	}
