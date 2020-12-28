@@ -42,6 +42,7 @@ type JobInterface interface {
 	Run() chan struct{}
 	RunInBackground() <-chan struct{}
 	Cancel()
+	Finish()
 	CancelWithError(err interface{})
 	Assert(err interface{})
 	AssertTrue(cond bool, err string)

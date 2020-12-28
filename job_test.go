@@ -121,13 +121,13 @@ func TestCancel(T *testing.T) {
 	nTasks := 100
 	job := j.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		job.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(100 * i)))
+		job.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(10 * i)))
 	}
 	for i := 0; i < nTasks; i++ {
 		job.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(i)))
 	}
 	<-job.Run()
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 	if ! job.IsCancelled() || job.GetFailedTasksNum() != uint32(nTasks) {
 		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
 			j.Cancelled, 100, job.GetState(), job.GetFailedTasksNum())

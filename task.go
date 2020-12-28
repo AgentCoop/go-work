@@ -1,10 +1,8 @@
 package job
 
 import (
-	"fmt"
+	"runtime"
 	"sync/atomic"
-	"time"
-
 	///"time"
 )
 
@@ -23,17 +21,18 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 		j.cancelMapMu.Unlock()
 		go func() {
 			defer func() {
-				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
-					fmt.Printf("err: %s\n", r)
+					j.Cancel()
 					atomic.AddUint32(&j.failedTasksCounter, 1)
-					go j.Cancel()
+					//fmt.Printf("failed %d %s\n", j.failedTasksCounter, r)
 				}
-				if runCount == 0 {
+				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
+				if  runCount == 0 {
 					go func() {
 						j.stateMu.Lock()
 						defer j.stateMu.Unlock()
-						if j.state == RecurrentRunning || j.state == OneshotRunning && j.failedTasksCounter == 0 {
+						failedCount := atomic.LoadUint32(&j.failedTasksCounter)
+						if j.state == RecurrentRunning || j.state == OneshotRunning && failedCount == 0 {
 							j.state = Done
 							j.done()
 						}
@@ -44,9 +43,9 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 				init()
 			}
 			for {
-				if failed := atomic.LoadUint32(&j.failedTasksCounter); failed > 0 {
-					return
-				}
+				//if failed := atomic.LoadUint32(&j.failedTasksCounter); failed > 0 {
+				//	return
+				//}
 				result := run()
 				j.stateMu.RLock()
 				switch j.state {
@@ -64,7 +63,7 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					j.stateMu.RUnlock()
 					return
 				}
-				time.Sleep(time.Millisecond)
+				runtime.Gosched()
 			}
 		}()
 	}

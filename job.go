@@ -164,22 +164,31 @@ func (j *Job) RunInBackground() <-chan struct{} {
 	return doneDup
 }
 
-func (j *Job) Cancel() {
+func (j *Job) cancel(state JobState) {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
-
+	if j.state != OneshotRunning && j.state != RecurrentRunning { return }
 	// Run cancel routines
-	j.cancelMapMu.Lock()
+	//j.cancelMapMu.Lock()
 	for idx, cancel := range j.cancelMap {
 		if cancel != nil {
-			if idx == 0 && j.state == OneshotRunning { // current task have not been started, no need to cancel
+			if idx == 0 && j.state == OneshotRunning { // concurrent tasks have not been started
+				go cancel()
 				break
 			}
 			go cancel()
 		}
 	}
-	j.state = Cancelled
+	j.state = state
 	j.doneChan <- struct{}{}
+}
+
+func (j *Job) Cancel() {
+	j.cancel(Cancelled)
+}
+
+func (j *Job) Finish() {
+	j.cancel(Done)
 }
 
 func (j *Job) CancelWithError(err interface{}) {
