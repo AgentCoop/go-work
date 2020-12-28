@@ -15,7 +15,7 @@ func t(info *j.TaskInfo) {
 	info.GetResult()
 }
 
-func incCounterJob(j j.Job) (func(), func() interface{}, func()) {
+func incCounterJob(j j.JobInterface) (func(), func() interface{}, func()) {
 	return func() {  }, func() interface{} {
 		mu.Lock()
 		defer mu.Unlock()
@@ -25,7 +25,7 @@ func incCounterJob(j j.Job) (func(), func() interface{}, func()) {
 }
 
 func squareJob(num int) j.JobTask {
-	return func(j j.Job) (func(), func() interface{}, func()) {
+	return func(j j.JobInterface) (func(), func() interface{}, func()) {
 		return func() { }, func() interface{} {
 			return num * num
 		}, func() { }
@@ -33,7 +33,7 @@ func squareJob(num int) j.JobTask {
 }
 
 func divideJob(num int, divider int, sleep time.Duration) j.JobTask {
-	return func(j j.Job) (func(), func() interface{}, func()) {
+	return func(j j.JobInterface) (func(), func() interface{}, func()) {
 		return func() {  }, func() interface{} {
 			if sleep > 0 {
 				time.Sleep(sleep)
@@ -47,7 +47,7 @@ func divideJob(num int, divider int, sleep time.Duration) j.JobTask {
 }
 
 func failedIOJob() j.JobTask {
-	return func(j j.Job) (func(), func() interface{}, func()) {
+	return func(j j.JobInterface) (func(), func() interface{}, func()) {
 		return func() { }, func() interface{} {
 			_, err := os.Open("foobar")
 			j.Assert(err)
@@ -57,7 +57,7 @@ func failedIOJob() j.JobTask {
 }
 
 func sleepIncCounterJob(sleep time.Duration) j.JobTask {
-	return func(j j.Job) (func(), func() interface{}, func()) {
+	return func(j j.JobInterface) (func(), func() interface{}, func()) {
 		return func() {  }, func() interface{} {
 			if sleep > 0 {
 				time.Sleep(sleep)
@@ -88,7 +88,7 @@ func TestPrereq(T *testing.T) {
 	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
 	job := j.NewJob(nil)
 	job.WithPrerequisites(p1, p2)
-	job.AddTask(func(j j.Job) (func(), func() interface{}, func()) {
+	job.AddTask(func(j j.JobInterface) (func(), func() interface{}, func()) {
 		return func() {}, func() interface{} {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)

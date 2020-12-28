@@ -1,16 +1,19 @@
 package job
 
 import (
+	"fmt"
 	"sync/atomic"
+	"time"
+
 	///"time"
 )
 
-func (j *job) hasOneshotTask() bool {
+func (j *Job) hasOneshotTask() bool {
 	_, ok := j.taskMap[0]
 	return ok
 }
 
-func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
+func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 	taskInfo := &TaskInfo{ typ: typ, index: index }
 	taskInfo.result = make(chan interface{}, 1)
 	body := func() {
@@ -22,6 +25,7 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 			defer func() {
 				runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 				if r := recover(); r != nil {
+					fmt.Printf("err: %s\n", r)
 					atomic.AddUint32(&j.failedTasksCounter, 1)
 					go j.Cancel()
 				}
@@ -60,6 +64,7 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					j.stateMu.RUnlock()
 					return
 				}
+				time.Sleep(time.Millisecond)
 			}
 		}()
 	}
@@ -70,12 +75,12 @@ func (j *job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 	return taskInfo
 }
 
-func (j *job) AddTask(task JobTask) *TaskInfo {
+func (j *Job) AddTask(task JobTask) *TaskInfo {
 	return j.createTask(task, 1 + len(j.taskMap), Recurrent)
 }
 
 // Zero index is reserved for oneshot task
-func (j *job) AddOneshotTask(task JobTask) *TaskInfo {
+func (j *Job) AddOneshotTask(task JobTask) *TaskInfo {
 	taskInfo := j.createTask(task, 0, Oneshot)
 	return taskInfo
 }

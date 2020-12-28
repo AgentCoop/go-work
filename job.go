@@ -12,12 +12,12 @@ func (t *TaskInfo) GetResult() chan interface{} {
 	return t.result
 }
 
-func (t *TaskInfo) GetJob() Job {
+func (t *TaskInfo) GetJob() JobInterface {
 	return t.job
 }
 
-func NewJob(value interface{}) *job {
-	j := &job{}
+func NewJob(value interface{}) *Job {
+	j := &Job{}
 	j.state = New
 	j.value = value
 	j.taskMap = make(TaskMap)
@@ -27,12 +27,12 @@ func NewJob(value interface{}) *job {
 	return j
 }
 
-func (j *job) done() {
+func (j *Job) done() {
 	j.doneChan <- struct{}{}
 }
 
-// A job won't start until all its prerequisites are met
-func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
+// A Job won't start until all its prerequisites are met
+func (j *Job) WithPrerequisites(sigs ...<-chan struct{}) *Job {
 	j.state = WaitingForPrereq
 	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
@@ -50,12 +50,12 @@ func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 	return j
 }
 
-func (j *job) WithTimeout(t time.Duration) *job {
+func (j *Job) WithTimeout(t time.Duration) *Job {
 	j.timeout = t
 	return j
 }
 
-func (j *job) Assert(err interface{}) {
+func (j *Job) Assert(err interface{}) {
 	if err != nil {
 		go func() {
 			j.errorChan <- err
@@ -66,7 +66,7 @@ func (j *job) Assert(err interface{}) {
 	}
 }
 
-func (j *job) AssertTrue(cond bool, err string) {
+func (j *Job) AssertTrue(cond bool, err string) {
 	if cond {
 		go func() {
 			j.errorChan <- errors.New(err)
@@ -76,11 +76,11 @@ func (j *job) AssertTrue(cond bool, err string) {
 	}
 }
 
-func (j *job) prerun() {
+func (j *Job) prerun() {
 	nTasks := len(j.taskMap)
 	j.errorChan = make(chan interface{}, nTasks)
 	j.runningTasksCounter = int32(nTasks)
-	// Start timer that will cancel and mark the job as timed out if needed
+	// Start timer that will cancel and mark the Job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
 			ch := time.After(j.timeout)
@@ -101,7 +101,7 @@ func (j *job) prerun() {
 	}
 }
 
-func (j *job) runOneshot() {
+func (j *Job) runOneshot() {
 	j.state = OneshotRunning
 	info := j.taskMap[0]
 	info.body()
@@ -127,7 +127,7 @@ func (j *job) runOneshot() {
 	}()
 }
 
-func (j *job) runRecurrent() {
+func (j *Job) runRecurrent() {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 	if j.state == Cancelled { return }
@@ -140,8 +140,8 @@ func (j *job) runRecurrent() {
 	}
 }
 
-// Concurrently executes all tasks in the job.
-func (j *job) Run() chan struct{} {
+// Concurrently executes all tasks in the Job.
+func (j *Job) Run() chan struct{} {
 	j.prerun()
 	if j.hasOneshotTask() {
 		j.runOneshot()
@@ -152,7 +152,7 @@ func (j *job) Run() chan struct{} {
 }
 
 // Dispatch Done signal as soon as oneshot task finishes itself
-func (j *job) RunInBackground() <-chan struct{} {
+func (j *Job) RunInBackground() <-chan struct{} {
 	doneDup := make(chan struct{})
 	go func() {
 		j.runOneshot()
@@ -164,7 +164,7 @@ func (j *job) RunInBackground() <-chan struct{} {
 	return doneDup
 }
 
-func (j *job) Cancel() {
+func (j *Job) Cancel() {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 
@@ -182,43 +182,43 @@ func (j *job) Cancel() {
 	j.doneChan <- struct{}{}
 }
 
-func (j *job) CancelWithError(err interface{}) {
+func (j *Job) CancelWithError(err interface{}) {
 	j.errorChan <- err
 	j.Cancel()
 }
 
-func (j *job) WasTimedOut() bool {
+func (j *Job) WasTimedOut() bool {
 	return j.timedoutFlag
 }
 
-func (j *job) GetError() chan interface{} {
+func (j *Job) GetError() chan interface{} {
 	return j.errorChan
 }
 
-func (j *job) GetFailedTasksNum() uint32 {
+func (j *Job) GetFailedTasksNum() uint32 {
 	return j.failedTasksCounter
 }
 
-func (j *job) GetValue() interface{} {
+func (j *Job) GetValue() interface{} {
 	return j.value
 }
 
-func (j *job) SetValue(v interface{}) {
+func (j *Job) SetValue(v interface{}) {
 	j.value = v
 }
 
-func (j *job) GetState() JobState {
+func (j *Job) GetState() JobState {
 	return j.state
 }
 
-func (j *job) IsRunning() bool {
+func (j *Job) IsRunning() bool {
 	return j.state == RecurrentRunning
 }
 
-func (j *job) IsCancelled() bool {
+func (j *Job) IsCancelled() bool {
 	return j.state == Cancelled
 }
 
-func (j *job) IsDone() bool {
+func (j *Job) IsDone() bool {
 	return j.state == Done
 }
