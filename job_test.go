@@ -127,7 +127,7 @@ func TestCancel(T *testing.T) {
 		job.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(i)))
 	}
 	<-job.Run()
-	time.Sleep(time.Millisecond)
+	time.Sleep(2000 * time.Millisecond)
 	if ! job.IsCancelled() || job.GetFailedTasksNum() != uint32(nTasks) {
 		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
 			j.Cancelled, 100, job.GetState(), job.GetFailedTasksNum())

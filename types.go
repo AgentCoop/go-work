@@ -68,13 +68,12 @@ type TaskInfo struct {
 }
 
 type job struct {
-	tasks               []func()
+	taskMap TaskMap
 	cancelTasks         []func()
 	failedTasksCounter  uint32
 	runningTasksCounter int32
 	state               JobState
 	timedoutFlag        bool
-	runInBackgroundFlag bool
 	withSyncCancel		bool
 	timeout             time.Duration
 
@@ -88,6 +87,4 @@ type job struct {
 
 	value      			interface{}
 	stateMu 			sync.RWMutex
-
-	taskMap TaskMap
 }

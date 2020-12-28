@@ -153,7 +153,6 @@ func (j *job) Run() chan struct{} {
 
 // Dispatch Done signal as soon as oneshot task finishes itself
 func (j *job) RunInBackground() <-chan struct{} {
-	j.runInBackgroundFlag = true
 	doneDup := make(chan struct{})
 	go func() {
 		j.runOneshot()
