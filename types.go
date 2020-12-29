@@ -7,6 +7,7 @@ import (
 
 type JobState int
 type TaskType int
+type TaskState int
 
 const (
 	New JobState = iota
@@ -15,6 +16,12 @@ const (
 	RecurrentRunning
 	Cancelled
 	Done
+)
+
+const (
+	PendingTask TaskState = iota
+	RunningTask
+	StoppedTask
 )
 
 const (
@@ -30,8 +37,12 @@ func (t TaskType) String() string {
 	return [...]string{"Oneshot", "Recurrent",}[t]
 }
 
-type Init func()
-type Run func(*TaskInfo) interface{}
+var (
+	DoneSig = struct{}{}
+)
+
+type Init func(*TaskInfo)
+type Run func(*TaskInfo)
 type Cancel func()
 type JobTask func(j JobInterface) (Init, Run, Cancel)
 type OneshotTask JobTask
@@ -60,13 +71,28 @@ type JobInterface interface {
 	IsCancelled() bool
 }
 
+type depMap map[int]*TaskInfo
+
 type TaskInfo struct {
 	index 	int
 	typ TaskType
+	state TaskState
+	//stateMu sync.
+	resultChan chan *TaskInfo
+	resultMu sync.RWMutex
+	result 	interface{}
+
+	depChan            chan *TaskInfo
+	depMap             depMap
+	depCounter         int32
+	depReceivedCounter int32
+
+	doneChan chan struct{}
+	job 	*Job
+
 	body func()
 	cancel func()
-	result 	chan interface{}
-	job 	*Job
+
 	err 	interface{}
 }
 

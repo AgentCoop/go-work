@@ -8,14 +8,6 @@ import (
 type TaskMap map[int]*TaskInfo
 type CancelMap map[int]Cancel
 
-func (t *TaskInfo) GetResult() chan interface{} {
-	return t.result
-}
-
-func (t *TaskInfo) GetJob() JobInterface {
-	return t.job
-}
-
 func NewJob(value interface{}) *Job {
 	j := &Job{}
 	j.state = New
@@ -79,7 +71,6 @@ func (j *Job) AssertTrue(cond bool, err string) {
 func (j *Job) prerun() {
 	nTasks := len(j.taskMap)
 	j.errorChan = make(chan interface{}, nTasks)
-	j.runningTasksCounter = int32(nTasks)
 	// Start timer that will cancel and mark the Job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -105,30 +96,12 @@ func (j *Job) runOneshot() {
 	j.state = OneshotRunning
 	info := j.taskMap[0]
 	info.body()
-	go func() {
-		for {
-			select {
-			case success := <- info.result:
-				j.stateMu.Lock()
-				defer j.stateMu.Unlock()
-				switch j.state {
-				case OneshotRunning:
-					if success != nil {
-						go j.runRecurrent()
-					} else {
-						j.state = Done
-						j.done()
-					}
-				}
-				j.oneshotDone <- struct{}{}
-				return
-			}
-		}
-	}()
 }
 
 func (j *Job) runRecurrent() {
+	//fmt.Printf("run reccurrent\n")
 	j.stateMu.Lock()
+	//fmt.Printf("locked\n")
 	defer j.stateMu.Unlock()
 	if j.state == Cancelled { return }
 	j.state = RecurrentRunning

@@ -12,57 +12,60 @@ var counter int
 var mu sync.Mutex
 
 func incCounterJob(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-	return func() {  }, func(t *job.TaskInfo) interface{} {
+	return func(t *job.TaskInfo) {  }, func(t *job.TaskInfo) {
 		mu.Lock()
 		defer mu.Unlock()
 		counter++
-		return counter
 	}, func() { }
 }
 
-func squareJob(num int) job.JobTask {
+func squareJob(num int, sleep time.Duration) job.JobTask {
 	return func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		return func() { }, func(t *job.TaskInfo) interface{} {
-			return num * num
+		return func(t *job.TaskInfo) { }, func(t *job.TaskInfo) {
+			if sleep > 0 { time.Sleep(sleep) }
+			squaredNum := num * num
+			t.SetResult(squaredNum)
+			t.Done()
 		}, func() { }
 	}
 }
 
 func divideJob(num int, divider int, sleep time.Duration) job.JobTask {
 	return func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		return func() {  }, func(t *job.TaskInfo) interface{} {
+		return func(t *job.TaskInfo) {  }, func(t *job.TaskInfo) {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
 			if divider == 0 {
 				j.Assert("division by zero")
 			}
-			return num / divider
+			t.SetResult(num / divider)
+			t.Done()
 		}, func() { }
 	}
 }
 
 func failedIOJob() job.JobTask {
 	return func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		return func() { }, func(t *job.TaskInfo) interface{} {
+		return func(t *job.TaskInfo) { }, func(t *job.TaskInfo) {
 			_, err := os.Open("foobar")
 			j.Assert(err)
-			return true
+			t.Done()
 		}, func() { }
 	}
 }
 
 func sleepIncCounterJob(sleep time.Duration) job.JobTask {
 	return func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		return func() {  }, func(t *job.TaskInfo) interface{} {
+		return func(t *job.TaskInfo) {  }, func(t *job.TaskInfo) {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
 			mu.Lock()
 			defer mu.Unlock()
 			counter++
-			return counter
-		}, func() { }
+			t.Done()
+		}, nil
 	}
 }
 
@@ -85,12 +88,11 @@ func TestPrereq(T *testing.T) {
 	j := job.NewJob(nil)
 	j.WithPrerequisites(p1, p2)
 	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		return func() {}, func(t *job.TaskInfo) interface{} {
+		return func(t *job.TaskInfo) {}, func(t *job.TaskInfo) {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
 				j.Cancel()
-				return false
 			}, func() {
 
 			}
@@ -100,15 +102,15 @@ func TestPrereq(T *testing.T) {
 
 func TestDone(T *testing.T) {
 	counter = 0
-	nTasks := 10
+	nTasks := 50
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
 		j.AddTask(sleepIncCounterJob(time.Microsecond * time.Duration(i)))
 	}
 	<-j.Run()
-	if ! j.IsDone() || j.GetFailedTasksNum() != 0 {
-		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
-			job.Done, 0, j.GetState(), j.GetFailedTasksNum())
+	if ! j.IsDone() || counter != nTasks {
+		T.Fatalf("expected: state %s, counter %d; got: %s, %d\n",
+			job.Done, nTasks, j.GetState(), counter)
 	}
 }
 
@@ -117,16 +119,12 @@ func TestCancel(T *testing.T) {
 	nTasks := 100
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(10 * i)))
-	}
-	for i := 0; i < nTasks; i++ {
-		j.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(i)))
+		j.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(i)))
+		j.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(2 * i)))
 	}
 	<-j.Run()
-	time.Sleep(5 * time.Millisecond)
-	if ! j.IsCancelled() || j.GetFailedTasksNum() != uint32(nTasks) {
-		T.Fatalf("expected: state %s, failed tasks count %d; got: %s, %d\n",
-			job.Cancelled, 100, j.GetState(), j.GetFailedTasksNum())
+	if ! j.IsCancelled() {
+		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
 	}
 }
 
@@ -156,18 +154,29 @@ func TestTimeout(T *testing.T) {
 func TestTaskResult(T *testing.T) {
 	// Must succeed
 	counter = 0
-	j := job.NewJob(nil).WithTimeout(10 * time.Millisecond)
-	task1 := j.AddTask(squareJob(3))
-	task2 := j.AddTask(sleepIncCounterJob(20 * time.Millisecond))
+	j := job.NewJob(nil)
+	task1 := j.AddTask(squareJob(2, time.Microsecond * 50))
+	task2 := j.AddTask(squareJob(3, 0))
+	task3 := j.AddTask(squareJob(4, time.Millisecond))
+	task4 := j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
+		run := func(t *job.TaskInfo) {
+			var sum int
+			for t := range t.GetDepChan() {
+				squaredNum := t.GetResult().(int)
+				sum += squaredNum
+			}
+			t.SetResult(sum)
+			t.Done()
+		}
+		return nil, run, nil
+	})
+	task4.DependsOn(task1)
+	task4.DependsOn(task2)
+	task4.DependsOn(task3)
 	<-j.Run()
-	if ! j.IsCancelled() || counter != 0 {
-		T.Fatalf("expected: counter 0, state Done; got: %d %s\n", counter, j.GetState())
-	}
-	select {
-	case num := <- task1.GetResult():
-		if num != 9 { T.Fatalf("expected: 0; got: %d\n", num) }
-	case <- task2.GetResult():
-		T.Fatal()
+
+	if ! j.IsDone() && task4.GetResult().(int) != 29  {
+		T.Fatalf("expected: state Done; total sun of square numbers %d; got: %d\n", j.GetState(), 29)
 	}
 }
 
@@ -184,10 +193,6 @@ func TestAssert(T *testing.T) {
 	<-j.Run()
 	if ! j.IsCancelled() {
 		T.Fatalf("expected: state %s; got: state %s", job.Cancelled, j.GetState())
-	}
-	time.Sleep(50 * time.Millisecond)
-	if j.GetFailedTasksNum() != uint32(nTasks) {
-		T.Fatalf("expected: %d; got: %d\n", nTasks, j.GetFailedTasksNum())
 	}
 	select {
 	case err := <- j.GetError():
