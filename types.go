@@ -77,38 +77,28 @@ type TaskInfo struct {
 	index 	int
 	typ TaskType
 	state TaskState
-	//stateMu sync.
-	resultChan chan *TaskInfo
 	resultMu sync.RWMutex
 	result 	interface{}
-
 	depChan            chan *TaskInfo
 	depMap             depMap
 	depCounter         int32
 	depReceivedCounter int32
 
-	doneChan chan struct{}
 	job 	*Job
-
 	body func()
 	cancel func()
-
 	err 	interface{}
 }
 
 type Job struct {
 	taskMap TaskMap
-	cancelTasks         []func()
 	failedTasksCounter  uint32
 	runningTasksCounter int32
 	state               JobState
 	timedoutFlag        bool
-	withSyncCancel		bool
 	timeout             time.Duration
 
 	cancelMapMu sync.Mutex
-	cancelMap CancelMap
-	oneshotTask			JobTask
 	errorChan			chan interface{}
 	doneChan    		chan struct{}
 	oneshotDone    		chan struct{}

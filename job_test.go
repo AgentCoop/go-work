@@ -126,6 +126,33 @@ func TestCancel(T *testing.T) {
 	if ! j.IsCancelled() {
 		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
 	}
+
+	counter = 0
+	nTasks = 100
+	j = job.NewJob(nil)
+	for i := 0; i < nTasks; i++ {
+		j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
+			run := func(t *job.TaskInfo) {
+				t.Done()
+			}
+			cancel := func() {
+				mu.Lock()
+				defer mu.Unlock()
+				counter++
+			}
+			return nil, run, cancel
+		})
+	}
+	j.AddTask(divideJob(9, 0, time.Microsecond * 10))
+	<-j.Run()
+	if ! j.IsCancelled() {
+		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
+	}
+	// Allocate enough time for cancel routines to finish
+	time.Sleep(time.Millisecond * 50)
+	if counter != nTasks {
+		T.Fatalf("expected: counter %d; got: %d\n", nTasks, counter)
+	}
 }
 
 func TestTimeout(T *testing.T) {
@@ -148,6 +175,27 @@ func TestTimeout(T *testing.T) {
 	<-j.Run()
 	if ! j.IsCancelled() || counter != 1 {
 		T.Fail()
+	}
+}
+
+
+func TestOneshot(T *testing.T) {
+	j := job.NewJob(nil)
+	j.AddOneshotTask(divideJob(9,3, time.Microsecond * 50))
+	task1 := j.AddTask(squareJob(4, 0))
+	<-j.Run()
+	res := task1.GetResult()
+	if ! j.IsCancelled() && res != 16  {
+		T.Fatalf("expected: state %s, task result %d; got: %s %v\n", job.Done, 16, j.GetState(), res)
+	}
+	// Failed oneshot task
+	j = job.NewJob(nil)
+	j.AddOneshotTask(divideJob(3,0, time.Microsecond * 50))
+	task1 = j.AddTask(squareJob(3, 0))
+	<-j.Run()
+	res = task1.GetResult()
+	if ! j.IsCancelled() && res != nil  {
+		T.Fatalf("expected: state %s, task result %v; got: %s %v\n", job.Cancelled, 0, j.GetState(), res)
 	}
 }
 
@@ -176,7 +224,7 @@ func TestTaskResult(T *testing.T) {
 	<-j.Run()
 
 	if ! j.IsDone() && task4.GetResult().(int) != 29  {
-		T.Fatalf("expected: state Done; total sun of square numbers %d; got: %d\n", j.GetState(), 29)
+		T.Fatalf("expected: state Done, total sun of square numbers %d; got: %d\n", j.GetState(), 29)
 	}
 }
 

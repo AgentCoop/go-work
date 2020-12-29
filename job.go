@@ -13,7 +13,6 @@ func NewJob(value interface{}) *Job {
 	j.state = New
 	j.value = value
 	j.taskMap = make(TaskMap)
-	j.cancelMap = make(CancelMap)
 	j.doneChan = make(chan struct{})
 	j.oneshotDone = make(chan struct{}, 1)
 	return j
@@ -99,9 +98,7 @@ func (j *Job) runOneshot() {
 }
 
 func (j *Job) runRecurrent() {
-	//fmt.Printf("run reccurrent\n")
 	j.stateMu.Lock()
-	//fmt.Printf("locked\n")
 	defer j.stateMu.Unlock()
 	if j.state == Cancelled { return }
 	j.state = RecurrentRunning
@@ -142,8 +139,8 @@ func (j *Job) cancel(state JobState) {
 	defer j.stateMu.Unlock()
 	if j.state != OneshotRunning && j.state != RecurrentRunning { return }
 	// Run cancel routines
-	//j.cancelMapMu.Lock()
-	for idx, cancel := range j.cancelMap {
+	for idx, task := range j.taskMap {
+		cancel := task.cancel
 		if cancel != nil {
 			if idx == 0 && j.state == OneshotRunning { // concurrent tasks have not been started
 				go cancel()
