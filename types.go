@@ -30,8 +30,11 @@ func (t TaskType) String() string {
 	return [...]string{"Oneshot", "Recurrent",}[t]
 }
 
-type JobTask func(j JobInterface) (func(), func() interface{}, func())
-type OneshotTask func(j JobInterface) (func(), func() bool, func())
+type Init func()
+type Run func(*TaskInfo) interface{}
+type Cancel func()
+type JobTask func(j JobInterface) (Init, Run, Cancel)
+type OneshotTask JobTask
 
 type JobInterface interface {
 	AddTask(job JobTask) *TaskInfo

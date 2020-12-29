@@ -6,7 +6,7 @@ import (
 )
 
 type TaskMap map[int]*TaskInfo
-type CancelMap map[int]func()
+type CancelMap map[int]Cancel
 
 func (t *TaskInfo) GetResult() chan interface{} {
 	return t.result

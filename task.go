@@ -46,7 +46,7 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 				//if failed := atomic.LoadUint32(&j.failedTasksCounter); failed > 0 {
 				//	return
 				//}
-				result := run()
+				result := run(taskInfo)
 				j.stateMu.RLock()
 				switch j.state {
 				case OneshotRunning:
