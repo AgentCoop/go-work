@@ -6,7 +6,6 @@ import (
 )
 
 type TaskMap map[int]*TaskInfo
-type CancelMap map[int]Cancel
 
 func NewJob(value interface{}) *Job {
 	j := &Job{}
@@ -27,7 +26,7 @@ func (j *Job) WithPrerequisites(sigs ...<-chan struct{}) *Job {
 	j.state = WaitingForPrereq
 	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
-		s := sig // Binds loop variable to go closure
+		s := sig
 		go func() {
 			for {
 				select {
@@ -70,7 +69,7 @@ func (j *Job) AssertTrue(cond bool, err string) {
 func (j *Job) prerun() {
 	nTasks := len(j.taskMap)
 	j.errorChan = make(chan interface{}, nTasks)
-	// Start timer that will cancel and mark the Job as timed out if needed
+	// Start timer that will finalize and mark the Job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
 			ch := time.After(j.timeout)
@@ -134,19 +133,19 @@ func (j *Job) RunInBackground() <-chan struct{} {
 	return doneDup
 }
 
-func (j *Job) cancel(state JobState) {
+func (j *Job) finalize(state JobState) {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 	if j.state != OneshotRunning && j.state != RecurrentRunning { return }
-	// Run cancel routines
+	// Run finalize routines
 	for idx, task := range j.taskMap {
-		cancel := task.cancel
-		if cancel != nil {
+		fin := task.finalize
+		if fin != nil {
 			if idx == 0 && j.state == OneshotRunning { // concurrent tasks have not been started
-				go cancel()
+				go fin()
 				break
 			}
-			go cancel()
+			go fin()
 		}
 	}
 	j.state = state
@@ -154,11 +153,11 @@ func (j *Job) cancel(state JobState) {
 }
 
 func (j *Job) Cancel() {
-	j.cancel(Cancelled)
+	j.finalize(Cancelled)
 }
 
 func (j *Job) Finish() {
-	j.cancel(Done)
+	j.finalize(Done)
 }
 
 func (j *Job) CancelWithError(err interface{}) {
@@ -172,10 +171,6 @@ func (j *Job) WasTimedOut() bool {
 
 func (j *Job) GetError() chan interface{} {
 	return j.errorChan
-}
-
-func (j *Job) GetFailedTasksNum() uint32 {
-	return j.failedTasksCounter
 }
 
 func (j *Job) GetValue() interface{} {

@@ -49,7 +49,7 @@ type OneshotTask JobTask
 
 type JobInterface interface {
 	AddTask(job JobTask) *TaskInfo
-	AddOneshotTask (job JobTask) *TaskInfo
+	AddOneshotTask (job JobTask)
 	WithPrerequisites(sigs ...<-chan struct{}) *Job
 	WithTimeout(duration time.Duration) *Job
 	WasTimedOut() bool
@@ -61,7 +61,6 @@ type JobInterface interface {
 	Assert(err interface{})
 	AssertTrue(cond bool, err string)
 	GetError() chan interface{}
-	GetFailedTasksNum() uint32
 	GetValue() interface{}
 	SetValue(v interface{})
 	GetState() JobState
@@ -84,10 +83,10 @@ type TaskInfo struct {
 	depCounter         int32
 	depReceivedCounter int32
 
-	job 	*Job
-	body func()
-	cancel func()
-	err 	interface{}
+	job      *Job
+	body     func()
+	finalize func()
+	err      interface{}
 }
 
 type Job struct {

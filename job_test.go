@@ -148,7 +148,7 @@ func TestCancel(T *testing.T) {
 	if ! j.IsCancelled() {
 		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
 	}
-	// Allocate enough time for cancel routines to finish
+	// Allocate enough time for finalize routines to finish
 	time.Sleep(time.Millisecond * 50)
 	if counter != nTasks {
 		T.Fatalf("expected: counter %d; got: %d\n", nTasks, counter)

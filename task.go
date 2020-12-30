@@ -59,11 +59,11 @@ func (t *TaskInfo) notifyDependentTasks(){
 	}
 }
 
-func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
-	taskInfo := newTask(typ, index)
+func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
+	task := newTask(typ, index)
 	body := func() {
-		init, run, cancel := task(j)
-		taskInfo.cancel = cancel
+		init, run, fin := taskGen(j)
+		task.finalize = fin
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -73,12 +73,11 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 			}()
 
 			atomic.AddInt32(&j.runningTasksCounter, 1)
-
 			if init != nil {
-				taskInfo.state = RunningTask
-				init(taskInfo)
+				task.state = RunningTask
+				init(task)
 			} else {
-				taskInfo.state = RunningTask
+				task.state = RunningTask
 			}
 
 			for {
@@ -86,7 +85,7 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					return
 				}
 
-				switch taskInfo.state {
+				switch task.state {
 				case StoppedTask:
 					j.stateMu.RLock()
 					switch j.state {
@@ -98,7 +97,7 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					case RecurrentRunning:
 						runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
 						j.stateMu.RUnlock()
-						taskInfo.notifyDependentTasks()
+						task.notifyDependentTasks()
 						if runCount == 0 {
 							j.state = Done
 							j.done()
@@ -109,16 +108,14 @@ func (j *Job) createTask(task JobTask, index int, typ TaskType) *TaskInfo {
 					return
 				}
 
-				run(taskInfo)
+				run(task)
 				runtime.Gosched()
 			}
 		}()
 	}
-
-	taskInfo.body = body
-	j.taskMap[index] = taskInfo
-
-	return taskInfo
+	task.body = body
+	j.taskMap[index] = task
+	return task
 }
 
 func (j *Job) AddTask(task JobTask) *TaskInfo {
@@ -126,7 +123,6 @@ func (j *Job) AddTask(task JobTask) *TaskInfo {
 }
 
 // Zero index is reserved for oneshot task
-func (j *Job) AddOneshotTask(task JobTask) *TaskInfo {
-	taskInfo := j.createTask(task, 0, Oneshot)
-	return taskInfo
+func (j *Job) AddOneshotTask(task JobTask) {
+	j.createTask(task, 0, Oneshot)
 }
