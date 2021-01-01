@@ -62,8 +62,8 @@ func sleepIncCounterJob(sleep time.Duration) job.JobTask {
 				time.Sleep(sleep)
 			}
 			mu.Lock()
-			defer mu.Unlock()
 			counter++
+			mu.Unlock()
 			t.Done()
 		}, nil
 	}
@@ -116,7 +116,7 @@ func TestDone(T *testing.T) {
 
 func TestCancel(T *testing.T) {
 	counter = 0
-	nTasks := 100
+	nTasks := 10
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
 		j.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(i)))
@@ -128,11 +128,12 @@ func TestCancel(T *testing.T) {
 	}
 
 	counter = 0
-	nTasks = 100
+	nTasks = 10
 	j = job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
 		j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
 			run := func(t *job.TaskInfo) {
+				//time.Sleep(time.Millisecond)
 				t.Done()
 			}
 			cancel := func() {
@@ -158,7 +159,7 @@ func TestCancel(T *testing.T) {
 func TestTimeout(T *testing.T) {
 	// Must succeed
 	counter = 0
-	j := job.NewJob(nil).WithTimeout(120 * time.Millisecond)
+	j := job.NewJob(nil).WithTimeout(200 * time.Millisecond)
 	for i := 0; i < 100; i++ {
 		j.AddTask(sleepIncCounterJob(time.Duration(i + 1) * time.Millisecond))
 	}
@@ -173,8 +174,9 @@ func TestTimeout(T *testing.T) {
 	j.AddTask(sleepIncCounterJob(10 * time.Millisecond))
 	j.AddTask(sleepIncCounterJob(99999 * time.Second)) // Must not block run method
 	<-j.Run()
+
 	if ! j.IsCancelled() || counter != 1 {
-		T.Fail()
+		T.Fatalf("expected: state %s, counter 1; got %s %d\n", job.Cancelled, j.GetState(), counter)
 	}
 }
 
@@ -196,35 +198,6 @@ func TestOneshot(T *testing.T) {
 	res = task1.GetResult()
 	if ! j.IsCancelled() && res != nil  {
 		T.Fatalf("expected: state %s, task result %v; got: %s %v\n", job.Cancelled, 0, j.GetState(), res)
-	}
-}
-
-func TestTaskResult(T *testing.T) {
-	// Must succeed
-	counter = 0
-	j := job.NewJob(nil)
-	task1 := j.AddTask(squareJob(2, time.Microsecond * 50))
-	task2 := j.AddTask(squareJob(3, 0))
-	task3 := j.AddTask(squareJob(4, time.Millisecond))
-	task4 := j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
-		run := func(t *job.TaskInfo) {
-			var sum int
-			for t := range t.GetDepChan() {
-				squaredNum := t.GetResult().(int)
-				sum += squaredNum
-			}
-			t.SetResult(sum)
-			t.Done()
-		}
-		return nil, run, nil
-	})
-	task4.DependsOn(task1)
-	task4.DependsOn(task2)
-	task4.DependsOn(task3)
-	<-j.Run()
-
-	if ! j.IsDone() && task4.GetResult().(int) != 29  {
-		T.Fatalf("expected: state Done, total sun of square numbers %d; got: %d\n", j.GetState(), 29)
 	}
 }
 

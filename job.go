@@ -69,14 +69,14 @@ func (j *Job) AssertTrue(cond bool, err string) {
 func (j *Job) prerun() {
 	nTasks := len(j.taskMap)
 	j.errorChan = make(chan interface{}, nTasks)
-	// Start timer that will finalize and mark the Job as timed out if needed
+	// Start timer that will finalize and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
 			ch := time.After(j.timeout)
 			for {
 				select {
 				case <-ch:
-					if j.state == RecurrentRunning {
+					if j.state == RecurrentRunning || j.state == OneshotRunning {
 						j.timedoutFlag = true
 						j.Cancel()
 					}

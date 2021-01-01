@@ -1,26 +1,22 @@
 package job
 
 import (
-	"runtime"
 	"sync/atomic"
 )
 
-func newTask(typ TaskType, index int) *TaskInfo{
+func newTask(job *Job, typ TaskType, index int) *TaskInfo{
 	t := &TaskInfo{
-		typ: typ,
-		index: index,
-		depChan: make(chan *TaskInfo),
-		depMap: make(depMap),
+		job:      job,
+		typ:      typ,
+		index:    index,
+		tickChan: make(chan struct{}, 1),
+		doneChan: make(chan struct{}, 1),
 	}
 	return t
 }
 
 func (t *TaskInfo) GetJob() JobInterface {
 	return t.job
-}
-
-func (t *TaskInfo) GetDepChan() chan *TaskInfo {
-	return t.depChan
 }
 
 func (t *TaskInfo) GetResult() interface{} {
@@ -35,13 +31,13 @@ func (t *TaskInfo) SetResult(result interface{}) {
 	t.result = result
 }
 
-func (t *TaskInfo) DependsOn(dep *TaskInfo) {
-	t.depCounter++
-	dep.depMap[t.index] = t
+func (t *TaskInfo) Tick() {
+	t.doneChan <- struct{}{}
 }
 
 func (t *TaskInfo) Done() {
 	t.state = StoppedTask
+	t.doneChan <- struct{}{}
 }
 
 func (j *Job) hasOneshotTask() bool {
@@ -49,30 +45,20 @@ func (j *Job) hasOneshotTask() bool {
 	return ok
 }
 
-func (t *TaskInfo) notifyDependentTasks(){
-	for _, dep := range t.depMap {
-		counter := atomic.AddInt32(&dep.depReceivedCounter, 1)
-		dep.depChan <- t
-		if counter == dep.depCounter {
-			close(dep.depChan)
-		}
-	}
-}
-
 func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
-	task := newTask(typ, index)
+	task := newTask(j, typ, index)
 	body := func() {
 		init, run, fin := taskGen(j)
 		task.finalize = fin
 		go func() {
 			defer func() {
+				atomic.AddUint32(&j.finishedTasksCounter, 1)
 				if r := recover(); r != nil {
 					atomic.AddUint32(&j.failedTasksCounter, 1)
 					j.Cancel()
 				}
 			}()
 
-			atomic.AddInt32(&j.runningTasksCounter, 1)
 			if init != nil {
 				task.state = RunningTask
 				init(task)
@@ -80,36 +66,28 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 				task.state = RunningTask
 			}
 
+			task.tickChan <- struct{}{}
 			for {
-				if atomic.LoadUint32(&j.failedTasksCounter) > 0 {
-					return
-				}
-
-				switch task.state {
-				case StoppedTask:
-					j.stateMu.RLock()
-					switch j.state {
-					case OneshotRunning:
-						atomic.AddInt32(&j.runningTasksCounter, -1)
-						j.oneshotDone <- DoneSig
-						j.stateMu.RUnlock()
-						j.runRecurrent()
-					case RecurrentRunning:
-						runCount := atomic.AddInt32(&j.runningTasksCounter, -1)
-						j.stateMu.RUnlock()
-						task.notifyDependentTasks()
-						if runCount == 0 {
-							j.state = Done
-							j.done()
+				select {
+					case <- task.tickChan:
+						run(task)
+					case <- task.doneChan:
+						if atomic.LoadUint32(&j.failedTasksCounter) > 0 {
+							return
 						}
-					default:
-						j.stateMu.RUnlock()
-					}
-					return
+						switch j.state {
+						case OneshotRunning:
+							j.oneshotDone <- DoneSig
+							j.runRecurrent()
+						case RecurrentRunning:
+							if atomic.LoadUint32(&j.finishedTasksCounter) == uint32(len(j.taskMap)) - 1 {
+								j.state = Done
+								j.done()
+							}
+						default:
+						}
+						return
 				}
-
-				run(task)
-				runtime.Gosched()
 			}
 		}()
 	}

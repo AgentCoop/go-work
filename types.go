@@ -73,16 +73,13 @@ type JobInterface interface {
 type depMap map[int]*TaskInfo
 
 type TaskInfo struct {
-	index 	int
-	typ TaskType
-	state TaskState
-	resultMu sync.RWMutex
-	result 	interface{}
-	depChan            chan *TaskInfo
-	depMap             depMap
-	depCounter         int32
-	depReceivedCounter int32
-
+	index              int
+	typ                TaskType
+	state              TaskState
+	resultMu           sync.RWMutex
+	result             interface{}
+	tickChan           chan struct{}
+	doneChan           chan struct{}
 	job      *Job
 	body     func()
 	finalize func()
@@ -90,19 +87,18 @@ type TaskInfo struct {
 }
 
 type Job struct {
-	taskMap TaskMap
+	taskMap 			TaskMap
 	failedTasksCounter  uint32
 	runningTasksCounter int32
+	finishedTasksCounter 	uint32
+	stateMu 			sync.RWMutex
 	state               JobState
 	timedoutFlag        bool
 	timeout             time.Duration
-
-	cancelMapMu sync.Mutex
+	cancelMapMu 		sync.Mutex
 	errorChan			chan interface{}
 	doneChan    		chan struct{}
 	oneshotDone    		chan struct{}
 	prereqWg    		sync.WaitGroup
-
 	value      			interface{}
-	stateMu 			sync.RWMutex
 }
