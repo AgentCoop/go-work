@@ -5,7 +5,15 @@ import (
 	"time"
 )
 
-type TaskMap map[int]*TaskInfo
+const (
+	DummyChanCapacity = 100
+)
+
+var (
+	defaultLogger   = make(LogLevelMap)
+	DefaultLogLevel int
+	dummyChan       = make(chan interface{}, DummyChanCapacity)
+)
 
 func NewJob(value interface{}) *Job {
 	j := &Job{}
@@ -158,6 +166,76 @@ func (j *Job) Cancel() {
 
 func (j *Job) Finish() {
 	j.finalize(Done)
+}
+
+func RegisterDefaultLogger(logger Logger) {
+	m := logger()
+	defaultLogger = m
+	for _, item := range m {
+		logchan := item.ch
+		handler := item.rechandler
+		go func() {
+			for {
+				select {
+				case entry := <- logchan:
+					handler(entry)
+				}
+			}
+		}()
+	}
+}
+
+func (j *Job) RegisterLogger(logger Logger) {
+	m := logger()
+	j.logLevelMap = m
+	for _, item := range m {
+		logchan := item.ch
+		handler := item.rechandler
+		go func() {
+			for {
+				select {
+				case entry := <- logchan:
+					handler(entry)
+				default:
+					if j.state == Cancelled || j.state == Done {
+						return
+					}
+				}
+			}
+		}()
+	}
+}
+
+func (j *Job) Log(level int) chan<- interface{} {
+	var m LogLevelMap
+	var currlevel int
+
+	if j.logLevelMap != nil {
+		m = j.logLevelMap
+		currlevel = j.logLevel
+	} else {
+		m = defaultLogger
+		currlevel = DefaultLogLevel
+	}
+
+	if level > currlevel {
+		if len(dummyChan) == DummyChanCapacity { // Flush the channel
+			i := 0
+			for _ = range dummyChan {
+				i++
+				if i == DummyChanCapacity - 1 {
+					return dummyChan
+				}
+			}
+		}
+		return dummyChan
+	}
+
+	item, ok := m[level];
+	if !ok {
+		panic("invalid log level")
+	}
+	return item.ch
 }
 
 func (j *Job) CancelWithError(err interface{}) {

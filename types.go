@@ -9,6 +9,19 @@ type JobState int
 type TaskType int
 type TaskState int
 
+
+type LogLevelMapItem struct {
+	ch chan interface{}
+	rechandler LogRecordHandler
+}
+type LogRecordHandler func(entry interface{})
+type LogLevelMap map[int]*LogLevelMapItem
+type Logger func() LogLevelMap
+
+func NewLogLevelMapItem(ch chan interface{}, handler LogRecordHandler) *LogLevelMapItem {
+	return &LogLevelMapItem{ch, handler}
+}
+
 const (
 	New JobState = iota
 	WaitingForPrereq
@@ -63,6 +76,8 @@ type JobInterface interface {
 	Cancel()
 	Finish()
 	CancelWithError(err interface{})
+	Log(level int) chan<- interface{}
+	RegisterLogger(logger Logger)
 	Assert(err interface{})
 	AssertTrue(cond bool, err string)
 	GetError() chan interface{}
@@ -74,6 +89,8 @@ type JobInterface interface {
 	IsDone() bool
 	IsCancelled() bool
 }
+
+type TaskMap map[int]*TaskInfo
 
 type TaskInfo struct {
 	index              int
@@ -91,6 +108,8 @@ type TaskInfo struct {
 
 type Job struct {
 	taskMap 			TaskMap
+	logLevelMap			LogLevelMap
+	logLevel			int
 	failedTasksCounter  uint32
 	finishedTasksCounter 	uint32
 	stateMu 			sync.RWMutex
