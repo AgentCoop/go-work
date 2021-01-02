@@ -4,9 +4,10 @@ import (
 	"sync/atomic"
 )
 
-func newTask(job *Job, typ TaskType, index int) *TaskInfo{
+func newTask(job *Job, typ TaskType, index int) *TaskInfo {
 	t := &TaskInfo{
 		job:      job,
+		state: PendingTask,
 		typ:      typ,
 		index:    index,
 		tickChan: make(chan struct{}, 1),
@@ -17,6 +18,10 @@ func newTask(job *Job, typ TaskType, index int) *TaskInfo{
 
 func (t *TaskInfo) GetJob() JobInterface {
 	return t.job
+}
+
+func (t *TaskInfo) GetState() TaskState {
+	return t.state
 }
 
 func (t *TaskInfo) GetResult() interface{} {
@@ -32,11 +37,11 @@ func (t *TaskInfo) SetResult(result interface{}) {
 }
 
 func (t *TaskInfo) Tick() {
-	t.doneChan <- struct{}{}
+	t.tickChan <- struct{}{}
 }
 
 func (t *TaskInfo) Done() {
-	t.state = StoppedTask
+	t.state = FinishedTask
 	t.doneChan <- struct{}{}
 }
 
@@ -55,24 +60,26 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 				atomic.AddUint32(&j.finishedTasksCounter, 1)
 				if r := recover(); r != nil {
 					atomic.AddUint32(&j.failedTasksCounter, 1)
+					task.state = StoppedTask
 					j.Cancel()
 				}
 			}()
 
-			if init != nil {
-				task.state = RunningTask
-				init(task)
-			} else {
-				task.state = RunningTask
-			}
-
+			task.state = RunningTask
+			if init != nil { init(task) }
 			task.tickChan <- struct{}{}
+
 			for {
 				select {
 					case <- task.tickChan:
+						if atomic.LoadUint32(&j.failedTasksCounter) > 0 {
+							task.state = StoppedTask
+							return
+						}
 						run(task)
 					case <- task.doneChan:
 						if atomic.LoadUint32(&j.failedTasksCounter) > 0 {
+							task.state = StoppedTask
 							return
 						}
 						switch j.state {
@@ -84,7 +91,6 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 								j.state = Done
 								j.done()
 							}
-						default:
 						}
 						return
 				}

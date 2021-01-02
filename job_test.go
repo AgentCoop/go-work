@@ -170,13 +170,19 @@ func TestTimeout(T *testing.T) {
 	// Must be cancelled
 	counter = 0
 	j = job.NewJob(nil)
-	j.WithTimeout(15 * time.Millisecond)
-	j.AddTask(sleepIncCounterJob(10 * time.Millisecond))
-	j.AddTask(sleepIncCounterJob(99999 * time.Second)) // Must not block run method
+	j.WithTimeout(20 * time.Millisecond)
+	task1 := j.AddTask(sleepIncCounterJob(10 * time.Millisecond))
+	task2 := j.AddTask(sleepIncCounterJob(99999 * time.Second)) // Must not block run method
 	<-j.Run()
 
 	if ! j.IsCancelled() || counter != 1 {
 		T.Fatalf("expected: state %s, counter 1; got %s %d\n", job.Cancelled, j.GetState(), counter)
+	}
+	if task1.GetState() != job.FinishedTask {
+		T.Fatalf("expected: task state %s; got %s\n", job.FinishedTask, task1.GetState())
+	}
+	if task2.GetState() != job.RunningTask {
+		T.Fatalf("expected: task state %s; got %s\n", job.RunningTask, task2.GetState())
 	}
 }
 

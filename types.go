@@ -18,20 +18,25 @@ const (
 	Done
 )
 
+func (s JobState) String() string {
+	return [...]string{"New", "WaitingForPrereq", "Oneshot", "Recurrent", "Cancelled", "Done"}[s]
+}
+
 const (
 	PendingTask TaskState = iota
 	RunningTask
 	StoppedTask
+	FinishedTask
 )
+
+func (s TaskState) String() string {
+	return [...]string{"Pending", "Running", "Stopped", "Finished"}[s]
+}
 
 const (
 	Oneshot TaskType = iota
 	Recurrent
 )
-
-func (s JobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Oneshot", "RecurrentRunning", "Cancelled", "Done"}[s]
-}
 
 func (t TaskType) String() string {
 	return [...]string{"Oneshot", "Recurrent",}[t]
@@ -70,8 +75,6 @@ type JobInterface interface {
 	IsCancelled() bool
 }
 
-type depMap map[int]*TaskInfo
-
 type TaskInfo struct {
 	index              int
 	typ                TaskType
@@ -89,13 +92,11 @@ type TaskInfo struct {
 type Job struct {
 	taskMap 			TaskMap
 	failedTasksCounter  uint32
-	runningTasksCounter int32
 	finishedTasksCounter 	uint32
 	stateMu 			sync.RWMutex
 	state               JobState
 	timedoutFlag        bool
 	timeout             time.Duration
-	cancelMapMu 		sync.Mutex
 	errorChan			chan interface{}
 	doneChan    		chan struct{}
 	oneshotDone    		chan struct{}
