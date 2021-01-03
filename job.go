@@ -1,18 +1,17 @@
 package job
 
 import (
-	"errors"
 	"time"
 )
 
 const (
-	DummyChanCapacity = 100
+	dummyChanCapacity = 100
 )
 
 var (
 	defaultLogger   = make(LogLevelMap)
 	DefaultLogLevel int
-	dummyChan       = make(chan interface{}, DummyChanCapacity)
+	dummyChan       = make(chan interface{}, dummyChanCapacity)
 )
 
 func NewJob(value interface{}) *Job {
@@ -27,6 +26,10 @@ func NewJob(value interface{}) *Job {
 
 func (j *Job) done() {
 	j.doneChan <- struct{}{}
+}
+
+func (j *Job) GetDoneChan() chan struct{} {
+	return j.doneChan
 }
 
 // A Job won't start until all its prerequisites are met
@@ -53,30 +56,7 @@ func (j *Job) WithTimeout(t time.Duration) *Job {
 	return j
 }
 
-func (j *Job) Assert(err interface{}) {
-	if err != nil {
-		go func() {
-			j.errorChan <- err
-			j.Cancel()
-		}()
-		// Now time to panic to stop normal goroutine execution from which Assert method was called.
-		panic(err)
-	}
-}
-
-func (j *Job) AssertTrue(cond bool, err string) {
-	if cond {
-		go func() {
-			j.errorChan <- errors.New(err)
-			j.Cancel()
-		}()
-		panic(err)
-	}
-}
-
 func (j *Job) prerun() {
-	nTasks := len(j.taskMap)
-	j.errorChan = make(chan interface{}, nTasks)
 	// Start timer that will finalize and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -142,9 +122,14 @@ func (j *Job) RunInBackground() <-chan struct{} {
 }
 
 func (j *Job) finalize(state JobState) {
-	j.stateMu.Lock()
-	defer j.stateMu.Unlock()
+	j.stateMu.RLock()
 	if j.state != OneshotRunning && j.state != RecurrentRunning { return }
+	j.stateMu.RUnlock()
+
+	j.stateMu.Lock()
+	j.state = state
+	j.stateMu.Unlock()
+
 	// Run finalize routines
 	for idx, task := range j.taskMap {
 		fin := task.finalize
@@ -156,7 +141,6 @@ func (j *Job) finalize(state JobState) {
 			go fin()
 		}
 	}
-	j.state = state
 	j.doneChan <- struct{}{}
 }
 
@@ -219,11 +203,11 @@ func (j *Job) Log(level int) chan<- interface{} {
 	}
 
 	if level > currlevel {
-		if len(dummyChan) == DummyChanCapacity { // Flush the channel
+		if len(dummyChan) == dummyChanCapacity { // Drain the channel before re-using it to prevent blocking
 			i := 0
 			for _ = range dummyChan {
 				i++
-				if i == DummyChanCapacity - 1 {
+				if i == dummyChanCapacity {
 					return dummyChan
 				}
 			}
@@ -238,17 +222,8 @@ func (j *Job) Log(level int) chan<- interface{} {
 	return item.ch
 }
 
-func (j *Job) CancelWithError(err interface{}) {
-	j.errorChan <- err
-	j.Cancel()
-}
-
 func (j *Job) WasTimedOut() bool {
 	return j.timedoutFlag
-}
-
-func (j *Job) GetError() chan interface{} {
-	return j.errorChan
 }
 
 func (j *Job) GetValue() interface{} {

@@ -37,7 +37,7 @@ func divideJob(num int, divider int, sleep time.Duration) job.JobTask {
 				time.Sleep(sleep)
 			}
 			if divider == 0 {
-				j.Assert("division by zero")
+				t.Assert("division by zero")
 			}
 			t.SetResult(num / divider)
 			t.Done()
@@ -49,7 +49,7 @@ func failedIOJob() job.JobTask {
 	return func(j job.JobInterface) (job.Init, job.Run, job.Cancel) {
 		return func(t *job.TaskInfo) { }, func(t *job.TaskInfo) {
 			_, err := os.Open("foobar")
-			j.Assert(err)
+			t.Assert(err)
 			t.Done()
 		}, func() { }
 	}
@@ -212,9 +212,10 @@ func TestAssert(T *testing.T) {
 	counter = 0
 	nTasks := 100
 	j := job.NewJob(nil)
+	failedTasks := make([]*job.TaskInfo, 100)
 	for i := 0; i < nTasks; i++ {
 		j.AddTask(divideJob(9, 3, 0))
-		j.AddTask(divideJob(9, 0, 0))
+		failedTasks[i] = j.AddTask(divideJob(9, 0, 0))
 		j.AddTask(divideJob(9, 9, 0))
 	}
 	<-j.Run()
@@ -222,7 +223,7 @@ func TestAssert(T *testing.T) {
 		T.Fatalf("expected: state %s; got: state %s", job.Cancelled, j.GetState())
 	}
 	select {
-	case err := <- j.GetError():
+	case err := <- failedTasks[0].GetErrorChan():
 		if err != "division by zero" {
 			T.Fatal()
 		}

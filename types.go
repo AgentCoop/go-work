@@ -75,12 +75,8 @@ type JobInterface interface {
 	RunInBackground() <-chan struct{}
 	Cancel()
 	Finish()
-	CancelWithError(err interface{})
 	Log(level int) chan<- interface{}
 	RegisterLogger(logger Logger)
-	Assert(err interface{})
-	AssertTrue(cond bool, err string)
-	GetError() chan interface{}
 	GetValue() interface{}
 	SetValue(v interface{})
 	GetState() JobState
@@ -100,10 +96,10 @@ type TaskInfo struct {
 	result             interface{}
 	tickChan           chan struct{}
 	doneChan           chan struct{}
+	errChan           chan interface{}
 	job      *Job
 	body     func()
 	finalize func()
-	err      interface{}
 }
 
 type Job struct {
@@ -116,7 +112,6 @@ type Job struct {
 	state               JobState
 	timedoutFlag        bool
 	timeout             time.Duration
-	errorChan			chan interface{}
 	doneChan    		chan struct{}
 	oneshotDone    		chan struct{}
 	prereqWg    		sync.WaitGroup
