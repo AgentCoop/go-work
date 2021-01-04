@@ -136,6 +136,10 @@ func (j *Job) RunInBackground() <-chan struct{} {
 		select {
 		case <- j.oneshotDone:
 			doneDup <- struct{}{}
+		default:
+			if j.failedTasksCounter > 0 {
+				return
+			}
 		}
 	}()
 	return doneDup
