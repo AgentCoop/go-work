@@ -9,12 +9,11 @@ type JobState int
 type TaskType int
 type TaskState int
 
-
 type LogLevelMapItem struct {
-	ch chan interface{}
+	ch         chan interface{}
 	rechandler LogRecordHandler
 }
-type LogRecordHandler func(entry interface{})
+type LogRecordHandler func(entry interface{}, level int)
 type LogLevelMap map[int]*LogLevelMapItem
 type Logger func() LogLevelMap
 
@@ -52,7 +51,7 @@ const (
 )
 
 func (t TaskType) String() string {
-	return [...]string{"Oneshot", "Recurrent",}[t]
+	return [...]string{"Oneshot", "Recurrent"}[t]
 }
 
 var (
@@ -61,13 +60,13 @@ var (
 
 type Init func(*TaskInfo)
 type Run func(*TaskInfo)
-type Cancel func()
-type JobTask func(j JobInterface) (Init, Run, Cancel)
+type Finalize func(*TaskInfo)
+type JobTask func(j JobInterface) (Init, Run, Finalize)
 type OneshotTask JobTask
 
 type JobInterface interface {
 	AddTask(job JobTask) *TaskInfo
-	AddOneshotTask (job JobTask)
+	AddOneshotTask(job JobTask)
 	WithPrerequisites(sigs ...<-chan struct{}) *Job
 	WithTimeout(duration time.Duration) *Job
 	WasTimedOut() bool
@@ -79,6 +78,7 @@ type JobInterface interface {
 	RegisterLogger(logger Logger)
 	GetValue() interface{}
 	SetValue(v interface{})
+	GetInterruptedBy() (*TaskInfo, interface{})
 	GetState() JobState
 	// Helper methods to GetState
 	IsRunning() bool
@@ -89,31 +89,34 @@ type JobInterface interface {
 type TaskMap map[int]*TaskInfo
 
 type TaskInfo struct {
-	index              int
-	typ                TaskType
-	state              TaskState
-	resultMu           sync.RWMutex
-	result             interface{}
-	tickChan           chan struct{}
-	doneChan           chan struct{}
-	errChan           chan interface{}
+	index    int
+	typ      TaskType
+	state    TaskState
+	resultMu sync.RWMutex
+	result   interface{}
+	tickChan chan struct{}
+	doneChan chan struct{}
 	job      *Job
 	body     func()
-	finalize func()
+	finalize Finalize
 }
 
 type Job struct {
-	taskMap 			TaskMap
-	logLevelMap			LogLevelMap
-	logLevel			int
-	failedTasksCounter  uint32
-	finishedTasksCounter 	uint32
-	stateMu 			sync.RWMutex
-	state               JobState
-	timedoutFlag        bool
-	timeout             time.Duration
-	doneChan    		chan struct{}
-	oneshotDone    		chan struct{}
-	prereqWg    		sync.WaitGroup
-	value      			interface{}
+	taskMap              TaskMap
+	logLevelMap          LogLevelMap
+	logLevel             int
+	failedTasksCounter   uint32
+	finishedTasksCounter uint32
+	stateMu              sync.RWMutex
+	state                JobState
+	finalizeOnce		sync.Once
+	timedoutFlag         bool
+	timeout              time.Duration
+	doneChan             chan struct{}
+	oneshotDone          chan struct{}
+	prereqWg             sync.WaitGroup
+	value                interface{}
+	interronce           sync.Once
+	interrby             *TaskInfo //// task interrupted the job execution
+	interrerr            interface{}
 }

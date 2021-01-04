@@ -78,6 +78,22 @@ func (j *Job) prerun() {
 	}
 }
 
+func (j *Job) observer() {
+	for {
+		j.stateMu.RLock()
+		if j.state == RecurrentRunning && j.finishedTasksCounter == uint32(len(j.taskMap)) {
+			j.stateMu.RUnlock()
+			j.state = Done
+			j.done()
+			return
+		} else if j.state == Cancelled || j.state == Done {
+			j.stateMu.RUnlock()
+			return
+		}
+		j.stateMu.RUnlock()
+	}
+}
+
 func (j *Job) runOneshot() {
 	j.state = OneshotRunning
 	info := j.taskMap[0]
@@ -87,8 +103,12 @@ func (j *Job) runOneshot() {
 func (j *Job) runRecurrent() {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
+
 	if j.state == Cancelled { return }
 	j.state = RecurrentRunning
+
+	go j.observer()
+
 	for i, info := range j.taskMap {
 		if i == 0 { // skip oneshot task
 			continue
@@ -122,47 +142,45 @@ func (j *Job) RunInBackground() <-chan struct{} {
 }
 
 func (j *Job) finalize(state JobState) {
-	j.stateMu.RLock()
-	if j.state != OneshotRunning && j.state != RecurrentRunning { return }
-	j.stateMu.RUnlock()
-
-	j.stateMu.Lock()
-	j.state = state
-	j.stateMu.Unlock()
-
 	// Run finalize routines
 	for idx, task := range j.taskMap {
 		fin := task.finalize
 		if fin != nil {
 			if idx == 0 && j.state == OneshotRunning { // concurrent tasks have not been started
-				go fin()
+				fin(task)
 				break
 			}
-			go fin()
+			fin(task)
 		}
 	}
-	j.doneChan <- struct{}{}
+	j.state = state
+	j.done()
 }
 
 func (j *Job) Cancel() {
-	j.finalize(Cancelled)
+	j.finalizeOnce.Do(func() {
+		j.finalize(Cancelled)
+	})
 }
 
 func (j *Job) Finish() {
-	j.finalize(Done)
+	j.finalizeOnce.Do(func() {
+		j.finalize(Done)
+	})
 }
 
 func RegisterDefaultLogger(logger Logger) {
 	m := logger()
 	defaultLogger = m
-	for _, item := range m {
+	for level, item := range m {
 		logchan := item.ch
 		handler := item.rechandler
+		l := level
 		go func() {
 			for {
 				select {
 				case entry := <- logchan:
-					handler(entry)
+					handler(entry, l)
 				}
 			}
 		}()
@@ -172,14 +190,14 @@ func RegisterDefaultLogger(logger Logger) {
 func (j *Job) RegisterLogger(logger Logger) {
 	m := logger()
 	j.logLevelMap = m
-	for _, item := range m {
+	for level, item := range m {
 		logchan := item.ch
 		handler := item.rechandler
 		go func() {
 			for {
 				select {
 				case entry := <- logchan:
-					handler(entry)
+					handler(entry, level)
 				default:
 					if j.state == Cancelled || j.state == Done {
 						return
@@ -248,4 +266,8 @@ func (j *Job) IsCancelled() bool {
 
 func (j *Job) IsDone() bool {
 	return j.state == Done
+}
+
+func (j *Job) GetInterruptedBy() (*TaskInfo, interface{}) {
+	return j.interrby, j.interrerr
 }
