@@ -112,7 +112,7 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 							}
 						}
 						return
-					default:
+					//default:
 				}
 			}
 		}()
