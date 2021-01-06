@@ -88,9 +88,10 @@ func (j *Job) hasOneshotTask() bool {
 
 func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 	task := newTask(j, typ, index)
+	init, run, fin := taskGen(j)
+	task.init = init
+	task.finalize = fin
 	body := func() {
-		init, run, fin := taskGen(j)
-		task.finalize = fin
 		go func() {
 			defer func() {
 				atomic.AddUint32(&j.finishedTasksCounter, 1)
@@ -101,7 +102,6 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 			}()
 
 			task.state = RunningTask
-			if init != nil { init(task) }
 			task.tickChan <- struct{}{}
 
 			for {
@@ -120,6 +120,7 @@ func (j *Job) createTask(taskGen JobTask, index int, typ TaskType) *TaskInfo {
 							j.runRecurrent()
 						}
 						return
+					default:
 				}
 			}
 		}()

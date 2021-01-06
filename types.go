@@ -98,6 +98,7 @@ type TaskInfo struct {
 	doneChan chan struct{}
 	job      *Job
 	body     func()
+	init Init
 	finalize Finalize
 }
 

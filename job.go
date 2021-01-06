@@ -19,7 +19,7 @@ func NewJob(value interface{}) *Job {
 	j.state = New
 	j.value = value
 	j.taskMap = make(TaskMap)
-	j.doneChan = make(chan struct{})
+	j.doneChan = make(chan struct{}, 1)
 	j.oneshotDone = make(chan struct{}, 1)
 	return j
 }
@@ -96,8 +96,9 @@ func (j *Job) observer() {
 
 func (j *Job) runOneshot() {
 	j.state = OneshotRunning
-	info := j.taskMap[0]
-	info.body()
+	task := j.taskMap[0]
+	if task.init != nil { task.init(task) }
+	task.body()
 }
 
 func (j *Job) runRecurrent() {
@@ -109,11 +110,14 @@ func (j *Job) runRecurrent() {
 
 	go j.observer()
 
-	for i, info := range j.taskMap {
-		if i == 0 { // skip oneshot task
-			continue
-		}
-		info.body()
+	for i, task := range j.taskMap {
+		if i == 0 { continue } // skip oneshot task
+		if task.init != nil { task.init(task) }
+	}
+
+	for i, task := range j.taskMap {
+		if i == 0 { continue }
+		task.body()
 	}
 }
 
@@ -136,10 +140,10 @@ func (j *Job) RunInBackground() <-chan struct{} {
 		select {
 		case <- j.oneshotDone:
 			doneDup <- struct{}{}
-		default:
-			if j.failedTasksCounter > 0 {
-				return
-			}
+		//default:
+		//	if j.failedTasksCounter > 0 {
+		//		return
+		//	}
 		}
 	}()
 	return doneDup
