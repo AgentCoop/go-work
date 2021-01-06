@@ -97,7 +97,11 @@ func (j *Job) observer() {
 func (j *Job) runOneshot() {
 	j.state = OneshotRunning
 	task := j.taskMap[0]
-	if task.init != nil { task.init(task) }
+	if task.init != nil {
+		task.thread(func() {
+			task.init(task)
+		}, false)
+	}
 	task.body()
 }
 
@@ -112,8 +116,14 @@ func (j *Job) runRecurrent() {
 
 	for i, task := range j.taskMap {
 		if i == 0 { continue } // skip oneshot task
-		if task.init != nil { task.init(task) }
+		if task.init != nil {
+			task.thread(func() {
+				task.init(task)
+			}, false)
+		}
 	}
+
+	if j.state != RecurrentRunning { return }
 
 	for i, task := range j.taskMap {
 		if i == 0 { continue }

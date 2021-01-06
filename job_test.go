@@ -1,6 +1,7 @@
 package job_test
 
 import (
+	"errors"
 	"github.com/AgentCoop/go-work"
 	"os"
 	"sync"
@@ -230,5 +231,40 @@ func TestAssert(T *testing.T) {
 	<-j.Run()
 	if ! j.IsCancelled() {
 		T.Fatalf("expected: state %s; got: state %s", job.Cancelled, j.GetState())
+	}
+}
+
+func TestCatchPanic(T *testing.T) {
+	var errUnexpected = errors.New("Unexpected error")
+	j := job.NewJob(nil)
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task *job.TaskInfo) {
+			time.Sleep(time.Millisecond * 10)
+			panic(errUnexpected)
+		}
+		return nil, run, nil
+	})
+	<-j.Run()
+	_, err := j.GetInterruptedBy()
+	if ! j.IsCancelled() && err != errUnexpected {
+		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), errUnexpected, err)
+	}
+	// Init panic
+	var errInitUnexpected = errors.New("Init unexpected error")
+	j = job.NewJob(nil)
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		init := func(task *job.TaskInfo) {
+			panic(errInitUnexpected)
+		}
+		run := func(task *job.TaskInfo) {
+			time.Sleep(time.Millisecond * 10)
+			panic(errUnexpected)
+		}
+		return init, run, nil
+	})
+	<-j.Run()
+	_, err = j.GetInterruptedBy()
+	if ! j.IsCancelled() && err != errInitUnexpected {
+		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), errUnexpected, err)
 	}
 }

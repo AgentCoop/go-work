@@ -110,14 +110,14 @@ type Job struct {
 	finishedTasksCounter uint32
 	stateMu              sync.RWMutex
 	state                JobState
-	finalizeOnce		sync.Once
+	finalizeOnce         sync.Once
 	timedoutFlag         bool
 	timeout              time.Duration
 	doneChan             chan struct{}
 	oneshotDone          chan struct{}
 	prereqWg             sync.WaitGroup
 	value                interface{}
-	interronce           sync.Once
+	stoponce             sync.Once
 	interrby             *TaskInfo //// task interrupted the job execution
 	interrerr            interface{}
 }
