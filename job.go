@@ -1,6 +1,7 @@
 package job
 
 import (
+	"sync"
 	"time"
 )
 
@@ -14,8 +15,28 @@ var (
 	dummyChan       = make(chan interface{}, dummyChanCapacity)
 )
 
-func NewJob(value interface{}) *Job {
-	j := &Job{}
+type job struct {
+	taskMap       TaskMap
+	logLevelMap   LogLevelMap
+	logLevel      int
+	failcount     uint32
+	finishedcount uint32
+	stateMu       sync.RWMutex
+	state         JobState
+	finalizeOnce  sync.Once
+	timedoutFlag  bool
+	timeout       time.Duration
+	doneChan      chan struct{}
+	oneshotDone   chan struct{}
+	prereqWg      sync.WaitGroup
+	value         interface{}
+	stoponce      sync.Once
+	interrby             *task //// task interrupted the job execution
+	interrerr            interface{}
+}
+
+func NewJob(value interface{}) *job {
+	j := &job{}
 	j.state = New
 	j.value = value
 	j.taskMap = make(TaskMap)
@@ -24,16 +45,45 @@ func NewJob(value interface{}) *Job {
 	return j
 }
 
-func (j *Job) done() {
+func (j *job) createTask(taskGen JobTask, index int, typ TaskType) *task {
+	task := newTask(j, typ, index)
+	init, run, fin := taskGen(j)
+	task.init = init
+	task.finalize = fin
+	task.body = func() {
+		go task.thread(func() {
+			task.taskLoop(run)
+		}, true)
+	}
+	j.taskMap[index] = task
+	return task
+}
+
+func (j *job) AddTask(task JobTask) *task {
+	return j.createTask(task, 1 + len(j.taskMap), Recurrent)
+}
+
+func (j *job) AddTaskWithIdleTimeout(task JobTask, timeout time.Duration) *task {
+	info := j.createTask(task, 1 + len(j.taskMap), Recurrent)
+	info.idleTimeout = int64(timeout)
+	return info
+}
+
+// Zero index is reserved for oneshot task
+func (j *job) AddOneshotTask(task JobTask) {
+	j.createTask(task, 0, Oneshot)
+}
+
+func (j *job) done() {
 	j.doneChan <- struct{}{}
 }
 
-func (j *Job) GetDoneChan() chan struct{} {
+func (j *job) GetDoneChan() chan struct{} {
 	return j.doneChan
 }
 
-// A Job won't start until all its prerequisites are met
-func (j *Job) WithPrerequisites(sigs ...<-chan struct{}) *Job {
+// A job won't start until all its prerequisites are met
+func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 	j.state = WaitingForPrereq
 	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
@@ -51,12 +101,12 @@ func (j *Job) WithPrerequisites(sigs ...<-chan struct{}) *Job {
 	return j
 }
 
-func (j *Job) WithTimeout(t time.Duration) *Job {
+func (j *job) WithTimeout(t time.Duration) *job {
 	j.timeout = t
 	return j
 }
 
-func (j *Job) prerun() {
+func (j *job) prerun() {
 	// Start timer that will finalize and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -78,7 +128,7 @@ func (j *Job) prerun() {
 	}
 }
 
-func (j *Job) observer() {
+func (j *job) observer() {
 	for {
 		j.stateMu.RLock()
 		if j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)) {
@@ -94,7 +144,7 @@ func (j *Job) observer() {
 	}
 }
 
-func (j *Job) runOneshot() {
+func (j *job) runOneshot() {
 	j.state = OneshotRunning
 	task := j.taskMap[0]
 	if task.init != nil {
@@ -105,7 +155,7 @@ func (j *Job) runOneshot() {
 	task.body()
 }
 
-func (j *Job) runRecurrent() {
+func (j *job) runRecurrent() {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
 
@@ -131,8 +181,8 @@ func (j *Job) runRecurrent() {
 	}
 }
 
-// Concurrently executes all tasks in the Job.
-func (j *Job) Run() chan struct{} {
+// Concurrently executes all tasks in the job.
+func (j *job) Run() chan struct{} {
 	j.prerun()
 	if j.hasOneshotTask() {
 		j.runOneshot()
@@ -143,7 +193,7 @@ func (j *Job) Run() chan struct{} {
 }
 
 // Dispatch Done signal as soon as oneshot task finishes itself
-func (j *Job) RunInBackground() <-chan struct{} {
+func (j *job) RunInBackground() <-chan struct{} {
 	doneDup := make(chan struct{})
 	go func() {
 		j.runOneshot()
@@ -159,7 +209,7 @@ func (j *Job) RunInBackground() <-chan struct{} {
 	return doneDup
 }
 
-func (j *Job) finalize(state JobState) {
+func (j *job) finalize(state JobState) {
 	// Run finalize routines
 	for idx, task := range j.taskMap {
 		fin := task.finalize
@@ -175,13 +225,13 @@ func (j *Job) finalize(state JobState) {
 	j.done()
 }
 
-func (j *Job) Cancel() {
+func (j *job) Cancel() {
 	j.finalizeOnce.Do(func() {
 		j.finalize(Cancelled)
 	})
 }
 
-func (j *Job) Finish() {
+func (j *job) Finish() {
 	j.finalizeOnce.Do(func() {
 		j.finalize(Done)
 	})
@@ -205,7 +255,7 @@ func RegisterDefaultLogger(logger Logger) {
 	}
 }
 
-func (j *Job) RegisterLogger(logger Logger) {
+func (j *job) RegisterLogger(logger Logger) {
 	m := logger()
 	j.logLevelMap = m
 	for level, item := range m {
@@ -226,7 +276,7 @@ func (j *Job) RegisterLogger(logger Logger) {
 	}
 }
 
-func (j *Job) Log(level int) chan<- interface{} {
+func (j *job) Log(level int) chan<- interface{} {
 	var m LogLevelMap
 	var currlevel int
 
@@ -258,34 +308,34 @@ func (j *Job) Log(level int) chan<- interface{} {
 	return item.ch
 }
 
-func (j *Job) WasTimedOut() bool {
+func (j *job) WasTimedOut() bool {
 	return j.timedoutFlag
 }
 
-func (j *Job) GetValue() interface{} {
+func (j *job) GetValue() interface{} {
 	return j.value
 }
 
-func (j *Job) SetValue(v interface{}) {
+func (j *job) SetValue(v interface{}) {
 	j.value = v
 }
 
-func (j *Job) GetState() JobState {
+func (j *job) GetState() JobState {
 	return j.state
 }
 
-func (j *Job) IsRunning() bool {
+func (j *job) IsRunning() bool {
 	return j.state == RecurrentRunning
 }
 
-func (j *Job) IsCancelled() bool {
+func (j *job) IsCancelled() bool {
 	return j.state == Cancelled
 }
 
-func (j *Job) IsDone() bool {
+func (j *job) IsDone() bool {
 	return j.state == Done
 }
 
-func (j *Job) GetInterruptedBy() (*TaskInfo, interface{}) {
+func (j *job) GetInterruptedBy() (*task, interface{}) {
 	return j.interrby, j.interrerr
 }
