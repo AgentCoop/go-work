@@ -81,7 +81,7 @@ func (j *Job) prerun() {
 func (j *Job) observer() {
 	for {
 		j.stateMu.RLock()
-		if j.state == RecurrentRunning && j.finishedTasksCounter == uint32(len(j.taskMap)) {
+		if j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)) {
 			j.stateMu.RUnlock()
 			j.state = Done
 			j.done()
@@ -151,7 +151,7 @@ func (j *Job) RunInBackground() <-chan struct{} {
 		case <- j.oneshotDone:
 			doneDup <- struct{}{}
 		//default:
-		//	if j.failedTasksCounter > 0 {
+		//	if j.failcount > 0 {
 		//		return
 		//	}
 		}

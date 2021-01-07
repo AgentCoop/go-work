@@ -67,6 +67,7 @@ type OneshotTask JobTask
 type JobInterface interface {
 	AddTask(job JobTask) *TaskInfo
 	AddOneshotTask(job JobTask)
+	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *TaskInfo
 	WithPrerequisites(sigs ...<-chan struct{}) *Job
 	WithTimeout(duration time.Duration) *Job
 	WasTimedOut() bool
@@ -92,10 +93,14 @@ type TaskInfo struct {
 	index    int
 	typ      TaskType
 	state    TaskState
+	starttime	int64
+	idletime	int64
+	idleTimeout int64
 	resultMu sync.RWMutex
 	result   interface{}
 	tickChan chan struct{}
 	doneChan chan struct{}
+	idleChan chan struct{}
 	job      *Job
 	body     func()
 	init Init
@@ -103,21 +108,21 @@ type TaskInfo struct {
 }
 
 type Job struct {
-	taskMap              TaskMap
-	logLevelMap          LogLevelMap
-	logLevel             int
-	failedTasksCounter   uint32
-	finishedTasksCounter uint32
-	stateMu              sync.RWMutex
-	state                JobState
-	finalizeOnce         sync.Once
-	timedoutFlag         bool
-	timeout              time.Duration
-	doneChan             chan struct{}
-	oneshotDone          chan struct{}
-	prereqWg             sync.WaitGroup
-	value                interface{}
-	stoponce             sync.Once
+	taskMap       TaskMap
+	logLevelMap   LogLevelMap
+	logLevel      int
+	failcount     uint32
+	finishedcount uint32
+	stateMu       sync.RWMutex
+	state         JobState
+	finalizeOnce  sync.Once
+	timedoutFlag  bool
+	timeout       time.Duration
+	doneChan      chan struct{}
+	oneshotDone   chan struct{}
+	prereqWg      sync.WaitGroup
+	value         interface{}
+	stoponce      sync.Once
 	interrby             *TaskInfo //// task interrupted the job execution
 	interrerr            interface{}
 }

@@ -234,6 +234,27 @@ func TestAssert(T *testing.T) {
 	}
 }
 
+func TestIdle(T *testing.T) {
+	j := job.NewJob(nil)
+	doneTimer := time.After(time.Millisecond * 5)
+	j.AddTaskWithIdleTimeout(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task *job.TaskInfo) {
+			select {
+			case <- doneTimer:
+				task.Done()
+			default:
+				task.Idle()
+			}
+		}
+		return nil, run, nil
+	}, time.Millisecond * 4)
+	<-j.Run()
+	_, err := j.GetInterruptedBy()
+	if ! j.IsCancelled() && err != job.ErrTaskIdleTimeout {
+		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), job.ErrTaskIdleTimeout, err)
+	}
+}
+
 func TestCatchPanic(T *testing.T) {
 	var errUnexpected = errors.New("Unexpected error")
 	j := job.NewJob(nil)
