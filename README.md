@@ -70,20 +70,20 @@ finalization routines of all tasks in the job being cancelled.
 ### API reference
 
 ##### Job
-  * [_AddTask(job JobTask) *TaskInfo_](docs/job.md) - adds a new task to the job
+  * [_AddTask(job JobTask) ***TaskInfo**_](docs/job.md) - adds a new task to the job
   * [_AddOneshotTask(job JobTask)_](docs/job.md) - adds an oneshot tasks to the job
-  * [_AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *TaskInfo_](docs/job.md) - adds a task with an idle timeout
-  * [_WithPrerequisites(sigs ...<-chan struct{}) *Job_](docs/job.md) - waits for the prerequisites to be met before running the job.
-  * [_WithTimeout(duration time.Duration) *Job_](docs/job.md) - sets run timeout for the job. 
+  * [_AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) ***TaskInfo**_](docs/job.md) - adds a task with an idle timeout
+  * [_WithPrerequisites(sigs ...<-chan struct{}) ***Job**_](docs/job.md) - waits for the prerequisites to be met before running the job.
+  * [_WithTimeout(duration time.Duration) ***Job**_](docs/job.md) - sets run timeout for the job. 
   * [_WasTimedOut() bool_](docs/job.md) - returns TRUE if the job was timed out.
   * [_Run() chan struct{}_](docs/job.md) - Runs the job.
-  * [_RunInBackground() <-chan struct{}_](docs/job.md) - Runs the job in background. An oneshot task required. 
+  * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - Runs the job in background. An oneshot task required. 
   * [_Cancel()_](docs/job.md) - Cancels the job.
   * [_Finish()_](docs/job.md) - Finishes the job.
-  * [_Log(level int) chan<- interface{}_](docs/job.md) - Writes a log record using default or job's logger.
+  * [_Log(level int) **chan<- interface{}**_](docs/job.md) - Writes a log record using default or job's logger.
   * [_RegisterLogger(logger Logger)_](docs/job.md) - Registers a job logger.
   * [_GetValue() interface{}_](docs/job.md) - Returns a job value.
   * [_SetValue(v interface{})_](docs/job.md) - Sets a job value.
-  * [_GetInterruptedBy() (*TaskInfo, interface{})_](docs/job.md) - Returns a task and an error that interrupted the job execution.
-  * [_GetState() JobState_](docs/job.md) - Returns the job state.
+  * [_GetInterruptedBy() (***TaskInfo, interface{}**)_](docs/job.md) - Returns a task and an error that interrupted the job execution.
+  * [_GetState() **JobState**_](docs/job.md) - Returns the job state.
 ##### Task
