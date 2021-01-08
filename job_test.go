@@ -247,7 +247,7 @@ func TestIdle(T *testing.T) {
 			}
 		}
 		return nil, run, nil
-	}, time.Millisecond * 4)
+	}, time.Millisecond * 1)
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
 	if ! j.IsCancelled() && err != job.ErrTaskIdleTimeout {

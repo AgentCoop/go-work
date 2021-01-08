@@ -126,9 +126,12 @@ func (t *task) thread(f func(), finish bool) {
 }
 
 func (t *task) wasStoppped() bool {
-	if t.job.state == Cancelled || atomic.LoadUint32(&t.job.failcount) > 0 {
+	switch {
+	case t.job.state == Cancelled, atomic.LoadUint32(&t.job.failcount) > 0:
 		return true
-	} else {
+	case t.typ == Recurrent && t.state == FinishedTask:
+		return true
+	default:
 		return false
 	}
 }
@@ -154,7 +157,6 @@ func (task *task) taskLoop(run Run) {
 		case <- task.doneChan:
 			task.idletime = 0
 			if task.wasStoppped() { return }
-			task.state = FinishedTask
 			switch job.state {
 			case OneshotRunning:
 				job.oneshotDone <- DoneSig
