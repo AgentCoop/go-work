@@ -65,6 +65,7 @@ type OneshotTask JobTask
 
 type Job interface {
 	AddTask(job JobTask) *task
+	GetTaskByIndex(index int) *task
 	AddOneshotTask(job JobTask)
 	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *task
 	WithPrerequisites(sigs ...<-chan struct{}) *job
@@ -97,4 +98,33 @@ type Task interface {
 	Idle()
 	Assert(err interface{})
 	AssertTrue(cond bool, err string)
+	AssertNotNil(value interface{})
+}
+
+func NewJob(value interface{}) *job {
+	j := &job{}
+	j.state = New
+	j.value = value
+	j.taskMap = make(TaskMap)
+	j.doneChan = make(chan struct{}, 1)
+	j.oneshotDone = make(chan struct{}, 1)
+	return j
+}
+
+func RegisterDefaultLogger(logger Logger) {
+	m := logger()
+	defaultLogger = m
+	for level, item := range m {
+		logchan := item.ch
+		handler := item.rechandler
+		l := level
+		go func() {
+			for {
+				select {
+				case entry := <- logchan:
+					handler(entry, l)
+				}
+			}
+		}()
+	}
 }

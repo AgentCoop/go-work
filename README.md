@@ -7,6 +7,8 @@ The goal of the _Job design pattern_ and this implementation is to provide an ea
 for solving problems involving concurrent executions and their control. The Job pattern in many cases can be viewed as
 an alternative to [*content.Context*](https://golang.org/pkg/context/), though it's not meant to completely replace it.   
 
+## Documentation
+
 #### What is a Job?
 A job is a set of concurrently running tasks, execution of which depends on each other. If one task fails, the whole job
 execution fails too.
@@ -19,7 +21,7 @@ execution fails too.
 ```
 
 #### What is a Task?
-A single task consists of three routines: an initialization routine, a recurrent routine, and a finalization routine:
+A single task consists of the three routines: an initialization routine, a recurrent routine, and a finalization routine:
 ```go
 func (stream *stream) ReadOnStreamTask(j job.Job) (job.Init, job.Run, job.Finalize) {
     init := func(task job.Task){
@@ -80,30 +82,32 @@ where the first one is being used to receive data and the second one - to notify
     }
 ```
 
-## Real life example
+### Real life example
 Now when we have a basic understanding, let's put the given pattern to use and take a look at a real life example:
 the implementation of a reverse proxy working as layer 4 load balancer, a backend server resizing images and a simple
 client that would scan a specified directory for images and send them through the proxy server for resizing.
 The code will speak for itself, so that we will quickly get the idea of how to use the given pattern.
 
-## Documentation
-
 ### API reference
+##### Public functions
+  * NewJob(value **interface{}**) ***job** - creates a new job with the given job value.
+  * RegisterDefaultLogger(logger **Logger**) - registers a fallback logger for all jobs.
 ##### Job
-  * [_AddTask(job JobTask) ***TaskInfo**_](docs/job.md) - adds a new task to the job
-  * [_AddOneshotTask(job JobTask)_](docs/job.md) - adds an oneshot tasks to the job
-  * [_AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) ***TaskInfo**_](docs/job.md) - adds a task with an idle timeout
-  * [_WithPrerequisites(sigs ...<-chan struct{}) ***Job**_](docs/job.md) - waits for the prerequisites to be met before running the job.
-  * [_WithTimeout(duration time.Duration) ***Job**_](docs/job.md) - sets run timeout for the job. 
-  * [_WasTimedOut() bool_](docs/job.md) - returns TRUE if the job was timed out.
-  * [_Run() chan struct{}_](docs/job.md) - runs the job.
+  * [_AddTask(job **JobTask**) ***TaskInfo**_](docs/job.md) - adds a new task to the job
+  * [_GetTaskByIndex(index **int**)_](docs/job.md) *task - returns a task by the given index.
+  * [_AddOneshotTask(job **JobTask**)_](docs/job.md) - adds an oneshot tasks to the job
+  * [_AddTaskWithIdleTimeout(job **JobTask**, timeout **time.Duration**) ***TaskInfo**_](docs/job.md) - adds a task with an idle timeout
+  * [_WithPrerequisites(sigs ...**<-chan struct{}**) ***Job**_](docs/job.md) - waits for the prerequisites to be met before running the job.
+  * [_WithTimeout(duration **time.Duration**) ***Job**_](docs/job.md) - sets run timeout for the job. 
+  * [_WasTimedOut() **bool**_](docs/job.md) - returns TRUE if the job was timed out.
+  * [_Run() **chan struct{}**_](docs/job.md) - runs the job.
   * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs the job in background. An oneshot task required. 
   * [_Cancel()_](docs/job.md) - cancels the job.
   * [_Finish()_](docs/job.md) - finishes the job.
-  * [_Log(level int) **chan<- interface{}**_](docs/job.md) - writes a log record using default or job's logger.
-  * [_RegisterLogger(logger Logger)_](docs/job.md) - registers a job logger.
+  * [_Log(level **int**) **chan<- interface{}**_](docs/job.md) - writes a log record using default or job's logger.
+  * [_RegisterLogger(logger **Logger**)_](docs/job.md) - registers a job logger.
   * [_GetValue() **interface{}**_](docs/job.md) - returns a job value.
-  * [_SetValue(v interface{})_](docs/job.md) - sets a job value.
+  * [_SetValue(v **interface{}**)_](docs/job.md) - sets a job value.
   * [_GetInterruptedBy() (***TaskInfo, interface{}**)_](docs/job.md) - returns a task and an error that interrupted the job execution.
   * [_GetState() **JobState**_](docs/job.md) - returns the job state.
 ##### Task
@@ -115,8 +119,8 @@ The code will speak for itself, so that we will quickly get the idea of how to u
   * [_Tick()_](docs/task.md)<sup>1</sup> - proceeds task execution. 
   * [_Done()_](docs/task.md)<sup>1</sup> - marks task as finished and stops its execution.
   * [_Idle()_](docs/task.md)<sup>1</sup> - do nothing. Being used for tasks having idle timeouts.
-  * [_Assert(err interface{})_](docs/task.md) - asserts that error has zero value.
-  * [_AssertTrue(cond bool, err string)_](docs/task.md) - asserts that condition is evaluated to _true_, otherwise stops
+  * [_Assert(err **interface{}**)_](docs/task.md) - asserts that error has zero value.
+  * [_AssertTrue(cond **bool**, err **string**)_](docs/task.md) - asserts that condition is evaluated to _true_, otherwise stops
   task execution with the given error.
   
 ###### Footnotes:

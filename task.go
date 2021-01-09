@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrTaskIdleTimeout = errors.New("task idle timeout")
+	ErrAssertZeroValue = errors.New("assert: zero value")
 )
 
 type TaskMap map[int]*task
@@ -105,6 +106,14 @@ func (t *task) AssertTrue(cond bool, err string) {
 	}
 }
 
+func (t *task) AssertNotNil(value interface{}) {
+	if value == nil {
+		err := ErrAssertZeroValue
+		t.stopexec(err)
+		panic(err)
+	}
+}
+
 func (j *job) hasOneshotTask() bool {
 	_, ok := j.taskMap[0]
 	return ok
@@ -145,7 +154,7 @@ func (task *task) taskLoop(run Run) {
 
 	for {
 		if task.wasStoppped() { return }
-		if task.idletime - task.starttime >= task.idleTimeout {
+		if task.idleTimeout > 0 && task.idletime - task.starttime >= task.idleTimeout {
 			task.stopexec(ErrTaskIdleTimeout)
 			return
 		}

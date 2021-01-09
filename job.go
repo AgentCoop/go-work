@@ -2,6 +2,7 @@ package job
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,16 +36,6 @@ type job struct {
 	interrerr            interface{}
 }
 
-func NewJob(value interface{}) *job {
-	j := &job{}
-	j.state = New
-	j.value = value
-	j.taskMap = make(TaskMap)
-	j.doneChan = make(chan struct{}, 1)
-	j.oneshotDone = make(chan struct{}, 1)
-	return j
-}
-
 func (j *job) createTask(taskGen JobTask, index int, typ TaskType) *task {
 	task := newTask(j, typ, index)
 	init, run, fin := taskGen(j)
@@ -61,6 +52,10 @@ func (j *job) createTask(taskGen JobTask, index int, typ TaskType) *task {
 
 func (j *job) AddTask(task JobTask) *task {
 	return j.createTask(task, 1 + len(j.taskMap), Recurrent)
+}
+
+func (j *job) GetTaskByIndex(index int) *task {
+	return j.taskMap[index]
 }
 
 func (j *job) AddTaskWithIdleTimeout(task JobTask, timeout time.Duration) *task {
@@ -197,13 +192,16 @@ func (j *job) RunInBackground() <-chan struct{} {
 	doneDup := make(chan struct{})
 	go func() {
 		j.runOneshot()
-		select {
-		case <- j.oneshotDone:
-			doneDup <- struct{}{}
-		//default:
-		//	if j.failcount > 0 {
-		//		return
-		//	}
+		for {
+			select {
+			case <-j.oneshotDone:
+				doneDup <- struct{}{}
+				return
+			default:
+				if atomic.LoadUint32(&j.failcount) > 0 {
+					return
+				}
+			}
 		}
 	}()
 	return doneDup
@@ -235,24 +233,6 @@ func (j *job) Finish() {
 	j.finalizeOnce.Do(func() {
 		j.finalize(Done)
 	})
-}
-
-func RegisterDefaultLogger(logger Logger) {
-	m := logger()
-	defaultLogger = m
-	for level, item := range m {
-		logchan := item.ch
-		handler := item.rechandler
-		l := level
-		go func() {
-			for {
-				select {
-				case entry := <- logchan:
-					handler(entry, l)
-				}
-			}
-		}()
-	}
 }
 
 func (j *job) RegisterLogger(logger Logger) {
