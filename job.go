@@ -1,7 +1,6 @@
 package job
 
 import (
-	"runtime"
 	"sync"
 	"time"
 )
@@ -30,6 +29,7 @@ type job struct {
 	runInBg  	  bool
 	timeout       time.Duration
 	doneChan      chan struct{}
+	observerchan  chan struct{}
 	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
@@ -126,21 +126,23 @@ func (j *job) prerun() {
 
 func (j *job) observer() {
 	for {
-		switch {
-		case j.state == OneshotRunning && j.finishedcount == 1:
-			j.runRecurrent()
-			if j.runInBg {
-				j.doneChan <- DoneSig
+		select {
+		case <- j.observerchan:
+			switch {
+			case j.state == OneshotRunning && j.finishedcount == 1:
+				j.runRecurrent()
+				if j.runInBg {
+					j.doneChan <- DoneSig
+				}
+				return
+			case j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)):
+				j.state = Done
+				j.done()
+				return
+			case j.state == Cancelled, j.state == Done:
+				return
 			}
-			return
-		case j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)):
-			j.state = Done
-			j.done()
-			return
-		case j.state == Cancelled, j.state == Done:
-			return
 		}
-		runtime.Gosched()
 	}
 }
 

@@ -281,7 +281,7 @@ func TestIdle(T *testing.T) {
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
 	if ! j.IsCancelled() && err != job.ErrTaskIdleTimeout {
-		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), job.ErrTaskIdleTimeout, err)
+		T.Fatalf("expected: state %s, error='%s'; got: %s, '%v'", job.Cancelled, job.ErrTaskIdleTimeout, j.GetState(), err)
 	}
 }
 

@@ -2,6 +2,7 @@ package job
 
 import (
 	"errors"
+	//"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -130,6 +131,7 @@ func (t *task) thread(f func(), finish bool) {
 			t.state = FailedTask
 			t.stopexec(r)
 		}
+		job.observerchan <- DoneSig
 	}()
 	f()
 }
@@ -152,11 +154,6 @@ func (task *task) taskLoop(run Run) {
 	task.starttime = time.Now().UnixNano()
 
 	for {
-		if task.wasStoppped() { return }
-		if task.idleTimeout > 0 && task.idletime - task.starttime >= task.idleTimeout {
-			task.stopexec(ErrTaskIdleTimeout)
-			return
-		}
 		select {
 		case <- task.tickChan:
 			task.idletime = 0
@@ -167,10 +164,17 @@ func (task *task) taskLoop(run Run) {
 			return
 		case <- task.idleChan:
 			task.idletime = time.Now().UnixNano()
-			if task.wasStoppped() { return }
-			run(task)
+			switch {
+			case task.wasStoppped():
+				return
+			case task.idleTimeout > 0 && task.idletime - task.starttime >= task.idleTimeout:
+				task.stopexec(ErrTaskIdleTimeout)
+				return
+			default:
+				run(task)
+			}
 		default:
-			task.idletime = 0
+			if task.wasStoppped() { return }
 		}
 	}
 }
