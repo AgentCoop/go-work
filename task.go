@@ -138,7 +138,7 @@ func (t *task) thread(f func(), finish bool) {
 
 func (t *task) wasStoppped() bool {
 	switch {
-	case t.job.state == Cancelled, atomic.LoadUint32(&t.job.failcount) > 0:
+	case t.job.state == Cancelled, t.job.state == Done, atomic.LoadUint32(&t.job.failcount) > 0:
 		return true
 	case t.typ == Recurrent && t.state == FinishedTask:
 		return true
