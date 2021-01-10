@@ -1,8 +1,8 @@
 package job
 
 import (
+	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -24,11 +24,12 @@ type job struct {
 	finishedcount uint32
 	stateMu       sync.RWMutex
 	state         JobState
+	runonce		sync.Once
 	finalizeOnce  sync.Once
 	timedoutFlag  bool
+	runInBg  	  bool
 	timeout       time.Duration
 	doneChan      chan struct{}
-	oneshotDone   chan struct{}
 	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
@@ -125,17 +126,21 @@ func (j *job) prerun() {
 
 func (j *job) observer() {
 	for {
-		j.stateMu.RLock()
-		if j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)) {
-			j.stateMu.RUnlock()
+		switch {
+		case j.state == OneshotRunning && j.finishedcount == 1:
+			j.runRecurrent()
+			if j.runInBg {
+				j.doneChan <- DoneSig
+			}
+			return
+		case j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)):
 			j.state = Done
 			j.done()
 			return
-		} else if j.state == Cancelled || j.state == Done {
-			j.stateMu.RUnlock()
+		case j.state == Cancelled, j.state == Done:
 			return
 		}
-		j.stateMu.RUnlock()
+		runtime.Gosched()
 	}
 }
 
@@ -178,37 +183,29 @@ func (j *job) runRecurrent() {
 
 // Concurrently executes all tasks in the job.
 func (j *job) Run() chan struct{} {
-	j.prerun()
-	if j.hasOneshotTask() {
-		j.runOneshot()
-	} else {
-		j.runRecurrent()
-	}
+	j.runonce.Do(func() {
+		j.prerun()
+		go j.observer()
+		if j.hasOneshotTask() {
+			j.runOneshot()
+		} else {
+			j.runRecurrent()
+		}
+	})
 	return j.doneChan
 }
 
-// Dispatch Done signal as soon as oneshot task finishes itself
 func (j *job) RunInBackground() <-chan struct{} {
-	doneDup := make(chan struct{})
-	go func() {
+	j.runonce.Do(func() {
+		j.runInBg = true
+		j.prerun()
+		go j.observer()
 		j.runOneshot()
-		for {
-			select {
-			case <-j.oneshotDone:
-				doneDup <- struct{}{}
-				return
-			default:
-				if atomic.LoadUint32(&j.failcount) > 0 {
-					return
-				}
-			}
-		}
-	}()
-	return doneDup
+	})
+	return j.doneChan
 }
 
 func (j *job) finalize(state JobState) {
-	// Run finalize routines
 	for idx, task := range j.taskMap {
 		fin := task.finalize
 		if fin != nil {

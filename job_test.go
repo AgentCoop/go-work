@@ -206,6 +206,36 @@ func TestOneshot(T *testing.T) {
 	}
 }
 
+func TestOneshotBg(T *testing.T) {
+	j := job.NewJob(nil)
+	j.AddOneshotTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
+		run := func(t job.Task) {
+			time.Sleep(time.Millisecond * 10)
+			counter = 1
+			t.Done()
+		}
+		return nil, run, nil
+	})
+	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
+		run := func(t job.Task) {
+			time.Sleep(time.Millisecond * 5)
+			counter = 2
+			t.Done()
+		}
+		return nil, run, nil
+	})
+	<-j.RunInBackground()
+	if j.GetState() != job.RecurrentRunning || counter != 1 {
+		T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.OneshotRunning, 1, j.GetState(), counter)
+	}
+	select {
+	case <- j.GetDoneChan():
+		if j.GetState() != job.Done || counter != 2 {
+			T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.Done, 2, j.GetState(), counter)
+		}
+	}
+}
+
 func TestAssert(T *testing.T) {
 	// Must succeed
 	counter = 0

@@ -148,7 +148,6 @@ func (t *task) wasStoppped() bool {
 func (task *task) taskLoop(run Run) {
 	task.state = RunningTask
 	task.tickChan <- struct{}{}
-	job := task.job
 	// Assume the init routine will be finished (or must) almost instantly
 	task.starttime = time.Now().UnixNano()
 
@@ -165,12 +164,6 @@ func (task *task) taskLoop(run Run) {
 			run(task)
 		case <- task.doneChan:
 			task.idletime = 0
-			if task.wasStoppped() { return }
-			switch job.state {
-			case OneshotRunning:
-				job.oneshotDone <- DoneSig
-				job.runRecurrent()
-			}
 			return
 		case <- task.idleChan:
 			task.idletime = time.Now().UnixNano()

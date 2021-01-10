@@ -107,7 +107,6 @@ func NewJob(value interface{}) *job {
 	j.value = value
 	j.taskMap = make(TaskMap)
 	j.doneChan = make(chan struct{}, 1)
-	j.oneshotDone = make(chan struct{}, 1)
 	return j
 }
 
