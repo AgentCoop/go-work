@@ -2,10 +2,10 @@ package job
 
 import (
 	"errors"
-	//"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+	"math"
 )
 
 var (
@@ -16,20 +16,21 @@ var (
 type TaskMap map[int]*task
 
 type task struct {
-	index    int
-	typ      TaskType
-	state    TaskState
-	starttime	int64
-	idletime	int64
-	idleTimeout int64
-	resultMu sync.RWMutex
-	result   interface{}
-	tickChan chan struct{}
-	doneChan chan struct{}
-	idleChan chan struct{}
-	job      *job
-	body     func()
-	init Init
+	index        int
+	typ          TaskType
+	state        TaskState
+	lasttick     int64
+	idletime     int64
+	idlecooldown int64
+	idleTimeout  int64
+	resultMu     sync.RWMutex
+	result       interface{}
+	tickChan     chan struct{}
+	doneChan     chan struct{}
+	idleChan     chan struct{}
+	job          *job
+	body         func()
+	init         Init
 	finalize Finalize
 }
 
@@ -43,6 +44,7 @@ func newTask(job *job, typ TaskType, index int) *task {
 		doneChan: make(chan struct{}, 1),
 		idleChan: make(chan struct{}, 1),
 	}
+	t.idlereset()
 	return t
 }
 
@@ -80,7 +82,16 @@ func (t *task) Done() {
 }
 
 func (t *task) Idle() {
+	c := float64(t.idlecooldown)
+	tn1 := t.idlecooldown + int64(c / math.Log(float64(c + 1))) + 1
+	time.Sleep(time.Duration(tn1))
+	t.idlecooldown = tn1
+	t.idletime = time.Now().UnixNano()
 	t.idleChan <- struct{}{}
+}
+
+func (t *task) idlereset() {
+	t.idlecooldown = 1 // one nanosecond
 }
 
 func (t *task) stopexec(err interface{}) {
@@ -151,30 +162,28 @@ func (task *task) taskLoop(run Run) {
 	task.state = RunningTask
 	task.tickChan <- struct{}{}
 	// Assume the init routine will be finished (or must) almost instantly
-	task.starttime = time.Now().UnixNano()
+	task.lasttick = time.Now().UnixNano()
 
 	for {
 		select {
 		case <- task.tickChan:
-			task.idletime = 0
+			task.lasttick = time.Now().UnixNano()
+			task.idlereset()
 			if task.wasStoppped() { return }
 			run(task)
 		case <- task.doneChan:
-			task.idletime = 0
+			task.lasttick = time.Now().UnixNano()
 			return
 		case <- task.idleChan:
-			task.idletime = time.Now().UnixNano()
 			switch {
 			case task.wasStoppped():
 				return
-			case task.idleTimeout > 0 && task.idletime - task.starttime >= task.idleTimeout:
+			case task.idleTimeout > 0 && task.idletime - task.lasttick >= task.idleTimeout:
 				task.stopexec(ErrTaskIdleTimeout)
 				return
 			default:
 				run(task)
 			}
-		default:
-			if task.wasStoppped() { return }
 		}
 	}
 }

@@ -264,9 +264,9 @@ func TestAssert(T *testing.T) {
 	}
 }
 
-func TestIdle(T *testing.T) {
+func TestIdleTimedout(T *testing.T) {
 	j := job.NewJob(nil)
-	doneTimer := time.After(time.Millisecond * 5)
+	doneTimer := time.After(time.Millisecond * 30)
 	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		run := func(task job.Task) {
 			select {
@@ -277,11 +277,32 @@ func TestIdle(T *testing.T) {
 			}
 		}
 		return nil, run, nil
-	}, time.Millisecond * 1)
+	}, time.Millisecond * 29)
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
-	if ! j.IsCancelled() && err != job.ErrTaskIdleTimeout {
+	if j.GetState() != job.Cancelled && err != job.ErrTaskIdleTimeout {
 		T.Fatalf("expected: state %s, error='%s'; got: %s, '%v'", job.Cancelled, job.ErrTaskIdleTimeout, j.GetState(), err)
+	}
+}
+
+func TestIdle(T *testing.T) {
+	j := job.NewJob(nil)
+	doneTimer := time.After(time.Millisecond * 10)
+	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.Task) {
+			select {
+			case <- doneTimer:
+				task.Done()
+			default:
+				task.Idle()
+			}
+		}
+		return nil, run, nil
+	}, time.Millisecond * 20)
+	<-j.Run()
+	_, err := j.GetInterruptedBy()
+	if j.GetState() != job.Done && err != nil {
+		T.Fatalf("expected: state %s, error='%v'; got: %s, '%v'", job.Done, nil, j.GetState(), err)
 	}
 }
 
