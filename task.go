@@ -161,9 +161,6 @@ func (t *task) wasStoppped() bool {
 func (task *task) taskLoop(run Run) {
 	task.state = RunningTask
 	task.tickChan <- struct{}{}
-	// Assume the init routine will be finished (or must) almost instantly
-	task.lasttick = time.Now().UnixNano()
-
 	for {
 		select {
 		case <- task.tickChan:
