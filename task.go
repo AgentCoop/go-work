@@ -2,15 +2,15 @@ package job
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
-	"math"
 )
 
 var (
-	ErrTaskIdleTimeout = errors.New("task idle timeout")
-	ErrAssertZeroValue = errors.New("assert: zero value")
+	ErrTaskIdleTimeout  = errors.New("task idle timeout")
+	ErrAssertZeroValue  = errors.New("assert: zero value")
 )
 
 type TaskMap map[int]*task
@@ -21,7 +21,6 @@ type task struct {
 	state        TaskState
 	lasttick     int64
 	idletime     int64
-	idlecooldown int64
 	idleTimeout  int64
 	resultMu     sync.RWMutex
 	result       interface{}
@@ -44,7 +43,6 @@ func newTask(job *job, typ TaskType, index int) *task {
 		doneChan: make(chan struct{}, 1),
 		idleChan: make(chan struct{}, 1),
 	}
-	t.idlereset()
 	return t
 }
 
@@ -82,16 +80,9 @@ func (t *task) Done() {
 }
 
 func (t *task) Idle() {
-	c := float64(t.idlecooldown)
-	tn1 := t.idlecooldown + int64(c / math.Log(float64(c + 1))) + 1
-	time.Sleep(time.Duration(tn1))
-	t.idlecooldown = tn1
+	runtime.Gosched()
 	t.idletime = time.Now().UnixNano()
 	t.idleChan <- struct{}{}
-}
-
-func (t *task) idlereset() {
-	t.idlecooldown = 1 // one nanosecond
 }
 
 func (t *task) stopexec(err interface{}) {
@@ -165,7 +156,6 @@ func (task *task) taskLoop(run Run) {
 		select {
 		case <- task.tickChan:
 			task.lasttick = time.Now().UnixNano()
-			task.idlereset()
 			if task.wasStoppped() { return }
 			run(task)
 		case <- task.doneChan:

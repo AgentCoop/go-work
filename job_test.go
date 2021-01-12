@@ -287,7 +287,7 @@ func TestIdleTimedout(T *testing.T) {
 
 func TestIdle(T *testing.T) {
 	j := job.NewJob(nil)
-	doneTimer := time.After(time.Millisecond * 10)
+	doneTimer := time.After(time.Millisecond * 19)
 	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		run := func(task job.Task) {
 			select {

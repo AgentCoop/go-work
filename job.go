@@ -102,9 +102,12 @@ func (j *job) WithTimeout(t time.Duration) *job {
 	return j
 }
 
-func (j *job) prerun() {
+func (j *job) init() {
 	// Observer's channel must never block a task.thread execution
 	j.observerchan = make(chan struct{}, 3 * len(j.taskMap))
+}
+
+func (j *job) prerun() {
 	// Start timer that will finalize and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -182,6 +185,7 @@ func (j *job) runRecurrent() {
 // Concurrently executes all tasks in the job.
 func (j *job) Run() chan struct{} {
 	j.runonce.Do(func() {
+		j.init()
 		go j.observer()
 		j.prerun()
 		if j.hasOneshotTask() {
@@ -196,6 +200,7 @@ func (j *job) Run() chan struct{} {
 func (j *job) RunInBackground() <-chan struct{} {
 	j.runonce.Do(func() {
 		j.runInBg = true
+		j.init()
 		go j.observer()
 		j.prerun()
 		j.runOneshot()
