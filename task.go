@@ -10,7 +10,7 @@ import (
 
 var (
 	ErrTaskIdleTimeout  = errors.New("task idle timeout")
-	ErrAssertZeroValue  = errors.New("assert: zero value")
+	ErrAssertZeroValue  = errors.New("go-work.Assert: zero value")
 )
 
 type TaskMap map[int]*task
@@ -18,6 +18,7 @@ type TaskMap map[int]*task
 type task struct {
 	index        int
 	typ          TaskType
+	statemux     sync.RWMutex
 	state        TaskState
 	lasttick     int64
 	idletime     int64
@@ -55,6 +56,8 @@ func (t *task) GetJob() Job {
 }
 
 func (t *task) GetState() TaskState {
+	t.statemux.RLock()
+	defer t.statemux.RUnlock()
 	return t.state
 }
 
@@ -75,6 +78,8 @@ func (t *task) Tick() {
 }
 
 func (t *task) Done() {
+	t.statemux.Lock()
+	defer t.statemux.Unlock()
 	t.state = FinishedTask
 	t.doneChan <- struct{}{}
 }
@@ -87,8 +92,10 @@ func (t *task) Idle() {
 
 func (t *task) stopexec(err interface{}) {
 	t.job.stoponce.Do(func() {
+		t.job.interrmux.Lock()
 		t.job.interrby = t
 		t.job.interrerr = err
+		t.job.interrmux.Unlock()
 		t.job.Cancel()
 	})
 }
@@ -139,6 +146,8 @@ func (t *task) thread(f func(), finish bool) {
 }
 
 func (t *task) wasStoppped() bool {
+	t.job.stateMu.RLock()
+	defer t.job.stateMu.RUnlock()
 	switch {
 	case t.job.state == Cancelled, t.job.state == Done, atomic.LoadUint32(&t.job.failcount) > 0:
 		return true

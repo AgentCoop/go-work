@@ -2,6 +2,7 @@ package job
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,6 +34,7 @@ type job struct {
 	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
+	interrmux sync.RWMutex
 	interrby             *task //// task interrupted the job execution
 	interrerr            interface{}
 }
@@ -133,17 +135,21 @@ func (j *job) observer() {
 	for {
 		select {
 		case <- j.observerchan:
+			fcount := atomic.LoadUint32(&j.finishedcount)
+			j.stateMu.RLock()
+			state := j.state
+			j.stateMu.RUnlock()
 			switch {
-			case j.state == OneshotRunning && j.finishedcount == 1:
+			case state == OneshotRunning && fcount == 1:
 				j.runRecurrent()
 				if j.runInBg {
 					j.doneChan <- DoneSig
 				}
-			case j.state == RecurrentRunning && j.finishedcount == uint32(len(j.taskMap)):
+			case state == RecurrentRunning && fcount == uint32(len(j.taskMap)):
 				j.state = Done
 				j.done()
 				return
-			case j.state == Cancelled, j.state == Done:
+			case state == Cancelled, state == Done:
 				return
 			}
 		}
@@ -209,6 +215,8 @@ func (j *job) RunInBackground() <-chan struct{} {
 }
 
 func (j *job) finalize(state JobState) {
+	j.stateMu.Lock()
+	defer j.stateMu.Unlock()
 	for idx, task := range j.taskMap {
 		fin := task.finalize
 		if fin != nil {
@@ -317,5 +325,7 @@ func (j *job) IsDone() bool {
 }
 
 func (j *job) GetInterruptedBy() (*task, interface{}) {
+	j.interrmux.RLock()
+	defer j.interrmux.RUnlock()
 	return j.interrby, j.interrerr
 }
