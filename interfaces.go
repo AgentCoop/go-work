@@ -81,6 +81,7 @@ type Job interface {
 	SetValue(v interface{})
 	GetInterruptedBy() (*task, interface{})
 	GetState() JobState
+	TaskDoneNotify() <-chan *task
 	// Helper methods to GetState
 	IsRunning() bool
 	IsDone() bool
@@ -96,6 +97,7 @@ type Task interface {
 	Tick()
 	Done()
 	Idle()
+	FinishJob()
 	Assert(err interface{})
 	AssertTrue(cond bool, err string)
 	AssertNotNil(value interface{})

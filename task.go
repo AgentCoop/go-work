@@ -82,12 +82,18 @@ func (t *task) Done() {
 	defer t.statemux.Unlock()
 	t.state = FinishedTask
 	t.doneChan <- struct{}{}
+	t.job.taskdonechan <- t
 }
 
 func (t *task) Idle() {
 	runtime.Gosched()
 	t.idletime = time.Now().UnixNano()
 	t.idleChan <- struct{}{}
+}
+
+func (t *task) FinishJob() {
+	t.Done()
+	t.job.Finish()
 }
 
 func (t *task) stopexec(err interface{}) {

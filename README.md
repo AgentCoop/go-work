@@ -104,6 +104,7 @@ The code will speak for itself, so that we will quickly get the idea of how to u
   * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs the job in background. An oneshot task required. 
   * [_Cancel()_](docs/job.md) - cancels the job.
   * [_Finish()_](docs/job.md) - finishes the job.
+  * [_TaskDoneNotify() **<-chan \*task**_](docs/job.md)
   * [_Log(level **int**) **chan<- interface{}**_](docs/job.md) - writes a log record using default or job's logger.
   * [_RegisterLogger(logger **Logger**)_](docs/job.md) - registers a job logger.
   * [_GetValue() **interface{}**_](docs/job.md) - returns a job value.
@@ -118,6 +119,7 @@ The code will speak for itself, so that we will quickly get the idea of how to u
   * [_SetResult(result **interface{}**)_](docs/task.md) - sets task result.
   * [_Tick()_](docs/task.md)<sup>1</sup> - proceeds task execution. 
   * [_Done()_](docs/task.md)<sup>1</sup> - marks task as finished and stops its execution.
+  * [_FinishJob()_](docs/task.md) 
   * [_Idle()_](docs/task.md)<sup>1</sup> - do nothing. Being used for tasks having idle timeouts.
   * [_Assert(err **interface{}**)_](docs/task.md) - asserts that error has zero value.
   * [_AssertTrue(cond **bool**, err **string**)_](docs/task.md) - asserts that condition is evaluated to _true_, otherwise stops

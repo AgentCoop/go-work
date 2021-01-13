@@ -31,6 +31,7 @@ type job struct {
 	timeout       time.Duration
 	doneChan      chan struct{}
 	observerchan  chan struct{}
+	taskdonechan  chan *task
 	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
@@ -76,6 +77,10 @@ func (j *job) done() {
 	j.doneChan <- struct{}{}
 }
 
+func (j *job) TaskDoneNotify() <-chan *task {
+	return j.taskdonechan
+}
+
 func (j *job) GetDoneChan() chan struct{} {
 	return j.doneChan
 }
@@ -107,6 +112,7 @@ func (j *job) WithTimeout(t time.Duration) *job {
 func (j *job) init() {
 	// Observer's channel must never block a task.thread execution
 	j.observerchan = make(chan struct{}, 3 * len(j.taskMap))
+	j.taskdonechan = make(chan *task, len(j.taskMap))
 }
 
 func (j *job) prerun() {
