@@ -1,6 +1,9 @@
 package job
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type JobState int
 type TaskType int
@@ -17,6 +20,12 @@ type Logger func() LogLevelMap
 func NewLogLevelMapItem(ch chan interface{}, handler LogRecordHandler) *LogLevelMapItem {
 	return &LogLevelMapItem{ch, handler}
 }
+
+var (
+	ErrTaskIdleTimeout  = errors.New("task idle timeout")
+	ErrAssertZeroValue  = errors.New("go-work.Assert: zero value")
+	ErrJobExecTimeout  = errors.New("go-work: job execution timed out")
+)
 
 const (
 	New JobState = iota
@@ -71,10 +80,9 @@ type Job interface {
 	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *task
 	WithPrerequisites(sigs ...<-chan struct{}) *job
 	WithTimeout(duration time.Duration) *job
-	WasTimedOut() bool
 	Run() chan struct{}
 	RunInBackground() <-chan struct{}
-	Cancel()
+	Cancel(err interface{})
 	Finish()
 	Log(level int) chan<- interface{}
 	RegisterLogger(logger Logger)
@@ -108,8 +116,8 @@ func NewJob(value interface{}) *job {
 	j := &job{}
 	j.state = New
 	j.value = value
-	j.taskMap = make(TaskMap)
-	j.doneChan = make(chan struct{}, 1)
+	j.taskMap = make(taskMap)
+	j.donechan = make(chan struct{}, 1)
 	return j
 }
 

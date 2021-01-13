@@ -93,7 +93,7 @@ func TestPrereq(T *testing.T) {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
-				j.Cancel()
+				j.Cancel(nil)
 			}, nil
 	})
 	<-j.Run()
@@ -266,7 +266,7 @@ func TestAssert(T *testing.T) {
 
 func TestIdleTimedout(T *testing.T) {
 	j := job.NewJob(nil)
-	doneTimer := time.After(time.Millisecond * 30)
+	doneTimer := time.After(time.Millisecond * 31)
 	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		run := func(task job.Task) {
 			select {
@@ -298,7 +298,7 @@ func TestIdle(T *testing.T) {
 			}
 		}
 		return nil, run, nil
-	}, time.Millisecond * 20)
+	}, time.Millisecond * 21)
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
 	if j.GetState() != job.Done && err != nil {

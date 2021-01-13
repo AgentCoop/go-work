@@ -8,41 +8,36 @@ import (
 	"time"
 )
 
-var (
-	ErrTaskIdleTimeout  = errors.New("task idle timeout")
-	ErrAssertZeroValue  = errors.New("go-work.Assert: zero value")
-)
-
-type TaskMap map[int]*task
+type taskMap map[int]*task
 
 type task struct {
-	index        int
-	typ          TaskType
-	statemux     sync.RWMutex
-	state        TaskState
-	lasttick     int64
-	idletime     int64
-	idleTimeout  int64
-	resultMu     sync.RWMutex
-	result       interface{}
-	tickChan     chan struct{}
-	doneChan     chan struct{}
-	idleChan     chan struct{}
-	job          *job
-	body         func()
-	init         Init
-	finalize Finalize
+	index       int
+	typ         TaskType
+	statemux    sync.RWMutex
+	state       TaskState
+	lasttick    int64
+	idletime    int64
+	idleTimeout int64
+	resultmux   sync.RWMutex
+	result      interface{}
+	tickchan    chan struct{}
+	donechan    chan struct{}
+	idlechan    chan struct{}
+	job         *job
+	body        func()
+	init        Init
+	finalize    Finalize
 }
 
 func newTask(job *job, typ TaskType, index int) *task {
 	t := &task{
 		job:      job,
-		state: PendingTask,
+		state:    PendingTask,
 		typ:      typ,
 		index:    index,
-		tickChan: make(chan struct{}, 1),
-		doneChan: make(chan struct{}, 1),
-		idleChan: make(chan struct{}, 1),
+		tickchan: make(chan struct{}, 1),
+		donechan: make(chan struct{}, 1),
+		idlechan: make(chan struct{}, 1),
 	}
 	return t
 }
@@ -62,33 +57,33 @@ func (t *task) GetState() TaskState {
 }
 
 func (t *task) GetResult() interface{} {
-	t.resultMu.RLock()
-	defer t.resultMu.RUnlock()
+	t.resultmux.RLock()
+	defer t.resultmux.RUnlock()
 	return t.result
 }
 
 func (t *task) SetResult(result interface{}) {
-	t.resultMu.Lock()
-	defer t.resultMu.Unlock()
+	t.resultmux.Lock()
+	defer t.resultmux.Unlock()
 	t.result = result
 }
 
 func (t *task) Tick() {
-	t.tickChan <- struct{}{}
+	t.tickchan <- struct{}{}
 }
 
 func (t *task) Done() {
 	t.statemux.Lock()
 	defer t.statemux.Unlock()
 	t.state = FinishedTask
-	t.doneChan <- struct{}{}
+	t.donechan <- struct{}{}
 	t.job.taskdonechan <- t
 }
 
 func (t *task) Idle() {
 	runtime.Gosched()
 	t.idletime = time.Now().UnixNano()
-	t.idleChan <- struct{}{}
+	t.idlechan <- struct{}{}
 }
 
 func (t *task) FinishJob() {
@@ -96,24 +91,9 @@ func (t *task) FinishJob() {
 	t.job.Finish()
 }
 
-func (t *task) stopexec(err interface{}) {
-	t.job.stoponce.Do(func() {
-		t.job.stateMu.RLock()
-		// Ignore any errors at the Finalizing or Done stage because some tasks will be forced to stop their execution
-		// by closing channels they are listening on. This will result in a panic call by the task.Assert method.
-		if t.job.state == Finalizing || t.job.state == Done { return }
-		t.job.stateMu.RUnlock()
-		t.job.interrmux.Lock()
-		t.job.interrby = t
-		t.job.interrerr = err
-		t.job.interrmux.Unlock()
-		t.job.Cancel()
-	})
-}
-
 func (t *task) Assert(err interface{}) {
 	if err != nil {
-		t.stopexec(err)
+		t.job.cancel(t, err)
 		// Now time to panic to stop normal goroutine execution from which Assert method was called.
 		panic(err)
 	}
@@ -122,7 +102,7 @@ func (t *task) Assert(err interface{}) {
 func (t *task) AssertTrue(cond bool, err string) {
 	if cond {
 		err := errors.New(err)
-		t.stopexec(err)
+		t.job.cancel(t, err)
 		panic(err)
 	}
 }
@@ -130,7 +110,7 @@ func (t *task) AssertTrue(cond bool, err string) {
 func (t *task) AssertNotNil(value interface{}) {
 	if value == nil {
 		err := ErrAssertZeroValue
-		t.stopexec(err)
+		t.job.cancel(t, err)
 		panic(err)
 	}
 }
@@ -146,10 +126,10 @@ func (t *task) thread(f func(), finish bool) {
 		if finish {
 			atomic.AddUint32(&job.finishedcount, 1)
 		}
-		if r := recover(); r != nil {
+		if err := recover(); err != nil {
 			atomic.AddUint32(&job.failcount, 1)
 			t.state = FailedTask
-			t.stopexec(r)
+			t.job.cancel(t, err)
 		}
 		job.observerchan <- DoneSig
 	}()
@@ -171,22 +151,22 @@ func (t *task) wasStoppped() bool {
 
 func (task *task) taskLoop(run Run) {
 	task.state = RunningTask
-	task.tickChan <- struct{}{}
+	task.tickchan <- struct{}{}
 	for {
 		select {
-		case <- task.tickChan:
+		case <- task.tickchan:
 			task.lasttick = time.Now().UnixNano()
 			if task.wasStoppped() { return }
 			run(task)
-		case <- task.doneChan:
+		case <- task.donechan:
 			task.lasttick = time.Now().UnixNano()
 			return
-		case <- task.idleChan:
+		case <- task.idlechan:
 			switch {
 			case task.wasStoppped():
 				return
 			case task.idleTimeout > 0 && task.idletime - task.lasttick >= task.idleTimeout:
-				task.stopexec(ErrTaskIdleTimeout)
+				task.job.cancel(task, ErrTaskIdleTimeout)
 				return
 			default:
 				run(task)

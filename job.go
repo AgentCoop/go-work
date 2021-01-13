@@ -17,27 +17,25 @@ var (
 )
 
 type job struct {
-	taskMap       TaskMap
+	taskMap       taskMap
 	logLevelMap   LogLevelMap
 	logLevel      int
 	failcount     uint32
 	finishedcount uint32
 	stateMu       sync.RWMutex
 	state         JobState
-	runonce		sync.Once
-	finalizeOnce  sync.Once
-	timedoutFlag  bool
-	runInBg  	  bool
+	runonce       sync.Once
+	finonce       sync.Once
+	runInBg       bool
 	timeout       time.Duration
-	doneChan      chan struct{}
+	donechan      chan struct{}
 	observerchan  chan struct{}
 	taskdonechan  chan *task
 	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
-	interrmux sync.RWMutex
-	interrby             *task //// task interrupted the job execution
-	interrerr            interface{}
+	interrby      *task // a task interrupted the job execution
+	interrerr     interface{}
 }
 
 func (j *job) createTask(taskGen JobTask, index int, typ TaskType) *task {
@@ -74,7 +72,7 @@ func (j *job) AddOneshotTask(task JobTask) {
 }
 
 func (j *job) done() {
-	j.doneChan <- struct{}{}
+	j.donechan <- struct{}{}
 }
 
 func (j *job) TaskDoneNotify() <-chan *task {
@@ -82,7 +80,7 @@ func (j *job) TaskDoneNotify() <-chan *task {
 }
 
 func (j *job) GetDoneChan() chan struct{} {
-	return j.doneChan
+	return j.donechan
 }
 
 // A job won't start until all its prerequisites are met
@@ -123,9 +121,12 @@ func (j *job) prerun() {
 			for {
 				select {
 				case <-ch:
-					if j.state == RecurrentRunning || j.state == OneshotRunning {
-						j.timedoutFlag = true
-						j.Cancel()
+					j.stateMu.RLock()
+					state := j.state
+					j.stateMu.RUnlock()
+					switch {
+					case state == RecurrentRunning, state == OneshotRunning:
+						j.Cancel(ErrJobExecTimeout)
 					}
 					return
 				}
@@ -149,7 +150,7 @@ func (j *job) observer() {
 			case state == OneshotRunning && fcount == 1:
 				j.runRecurrent()
 				if j.runInBg {
-					j.doneChan <- DoneSig
+					j.donechan <- DoneSig
 				}
 			case state == RecurrentRunning && fcount == uint32(len(j.taskMap)):
 				j.state = Done
@@ -206,7 +207,7 @@ func (j *job) Run() chan struct{} {
 			j.runRecurrent()
 		}
 	})
-	return j.doneChan
+	return j.donechan
 }
 
 func (j *job) RunInBackground() <-chan struct{} {
@@ -217,7 +218,7 @@ func (j *job) RunInBackground() <-chan struct{} {
 		j.prerun()
 		j.runOneshot()
 	})
-	return j.doneChan
+	return j.donechan
 }
 
 func (j *job) finalize(state JobState) {
@@ -239,14 +240,20 @@ func (j *job) finalize(state JobState) {
 	j.done()
 }
 
-func (j *job) Cancel() {
-	j.finalizeOnce.Do(func() {
+func (j *job) cancel(cancelledby *task, err interface{}) {
+	j.finonce.Do(func() {
+		j.interrby = cancelledby
+		j.interrerr = err
 		j.finalize(Cancelled)
 	})
 }
 
+func (j *job) Cancel(err interface{}) {
+	j.cancel(nil, err)
+}
+
 func (j *job) Finish() {
-	j.finalizeOnce.Do(func() {
+	j.finonce.Do(func() {
 		j.finalize(Done)
 	})
 }
@@ -304,10 +311,6 @@ func (j *job) Log(level int) chan<- interface{} {
 	return item.ch
 }
 
-func (j *job) WasTimedOut() bool {
-	return j.timedoutFlag
-}
-
 func (j *job) GetValue() interface{} {
 	return j.value
 }
@@ -333,7 +336,5 @@ func (j *job) IsDone() bool {
 }
 
 func (j *job) GetInterruptedBy() (*task, interface{}) {
-	j.interrmux.RLock()
-	defer j.interrmux.RUnlock()
 	return j.interrby, j.interrerr
 }
