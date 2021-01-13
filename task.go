@@ -98,6 +98,11 @@ func (t *task) FinishJob() {
 
 func (t *task) stopexec(err interface{}) {
 	t.job.stoponce.Do(func() {
+		t.job.stateMu.RLock()
+		// Ignore any errors at the Finalizing or Done stage because some tasks will be forced to stop their execution
+		// by closing channels they are listening on. This will result in a panic call by the task.Assert method.
+		if t.job.state == Finalizing || t.job.state == Done { return }
+		t.job.stateMu.RUnlock()
 		t.job.interrmux.Lock()
 		t.job.interrby = t
 		t.job.interrerr = err

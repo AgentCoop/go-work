@@ -23,12 +23,13 @@ const (
 	WaitingForPrereq
 	OneshotRunning
 	RecurrentRunning
+	Finalizing
 	Cancelled
 	Done
 )
 
 func (s JobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Oneshot", "Recurrent", "Cancelled", "Done"}[s]
+	return [...]string{"New", "WaitingForPrereq", "Oneshot", "Recurrent", "Finalizing", "Cancelled", "Done"}[s]
 }
 
 const (

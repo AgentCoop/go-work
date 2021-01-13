@@ -223,10 +223,12 @@ func (j *job) RunInBackground() <-chan struct{} {
 func (j *job) finalize(state JobState) {
 	j.stateMu.Lock()
 	defer j.stateMu.Unlock()
+	prevs := j.state
+	j.state = Finalizing
 	for idx, task := range j.taskMap {
 		fin := task.finalize
 		if fin != nil {
-			if idx == 0 && j.state == OneshotRunning { // concurrent tasks have not been started
+			if idx == 0 && prevs == OneshotRunning { // concurrent tasks have not been started
 				fin(task)
 				break
 			}
