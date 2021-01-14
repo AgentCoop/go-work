@@ -6,13 +6,14 @@ import (
 	"time"
 )
 
+type jobState int
+
 const (
 	dummyChanCapacity = 100
 )
 
 var (
 	defaultLogger   = make(LogLevelMap)
-	DefaultLogLevel int
 	dummyChan       = make(chan interface{}, dummyChanCapacity)
 )
 
@@ -22,8 +23,8 @@ type job struct {
 	logLevel      int
 	failcount     uint32
 	finishedcount uint32
-	stateMu       sync.RWMutex
-	state         JobState
+	statemux      sync.RWMutex
+	state         jobState
 	runonce       sync.Once
 	finonce       sync.Once
 	runInBg       bool
@@ -38,7 +39,7 @@ type job struct {
 	interrerr     interface{}
 }
 
-func (j *job) createTask(taskGen JobTask, index int, typ TaskType) *task {
+func (j *job) createTask(taskGen JobTask, index int, typ taskType) *task {
 	task := newTask(j, typ, index)
 	init, run, fin := taskGen(j)
 	task.init = init
@@ -79,12 +80,12 @@ func (j *job) TaskDoneNotify() <-chan *task {
 	return j.taskdonechan
 }
 
-func (j *job) GetDoneChan() chan struct{} {
+func (j *job) JobDoneNotify() chan struct{} {
 	return j.donechan
 }
 
 // A job won't start until all its prerequisites are met
-func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
+func (j *job) WithPrerequisites(sigs ...<-chan struct{}) {
 	j.state = WaitingForPrereq
 	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
@@ -99,12 +100,10 @@ func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 			}
 		}()
 	}
-	return j
 }
 
-func (j *job) WithTimeout(t time.Duration) *job {
+func (j *job) WithTimeout(t time.Duration) {
 	j.timeout = t
-	return j
 }
 
 func (j *job) init() {
@@ -121,9 +120,9 @@ func (j *job) prerun() {
 			for {
 				select {
 				case <-ch:
-					j.stateMu.RLock()
+					j.statemux.RLock()
 					state := j.state
-					j.stateMu.RUnlock()
+					j.statemux.RUnlock()
 					switch {
 					case state == RecurrentRunning, state == OneshotRunning:
 						j.Cancel(ErrJobExecTimeout)
@@ -143,14 +142,14 @@ func (j *job) observer() {
 		select {
 		case <- j.observerchan:
 			fcount := atomic.LoadUint32(&j.finishedcount)
-			j.stateMu.RLock()
+			j.statemux.RLock()
 			state := j.state
-			j.stateMu.RUnlock()
+			j.statemux.RUnlock()
 			switch {
 			case state == OneshotRunning && fcount == 1:
 				j.runRecurrent()
 				if j.runInBg {
-					j.donechan <- DoneSig
+					j.donechan <- NotifySig
 				}
 			case state == RecurrentRunning && fcount == uint32(len(j.taskMap)):
 				j.state = Done
@@ -221,15 +220,15 @@ func (j *job) RunInBackground() <-chan struct{} {
 	return j.donechan
 }
 
-func (j *job) finalize(state JobState) {
-	j.stateMu.Lock()
-	defer j.stateMu.Unlock()
+func (j *job) finalize(state jobState) {
+	j.statemux.Lock()
+	defer j.statemux.Unlock()
 	prevs := j.state
 	j.state = Finalizing
 	for idx, task := range j.taskMap {
 		fin := task.finalize
 		if fin != nil {
-			if idx == 0 && prevs == OneshotRunning { // concurrent tasks have not been started
+			if idx == 0 && prevs == OneshotRunning { // recurrent tasks have not been started
 				fin(task)
 				break
 			}
@@ -270,7 +269,10 @@ func (j *job) RegisterLogger(logger Logger) {
 				case entry := <- logchan:
 					handler(entry, level)
 				default:
-					if j.state == Cancelled || j.state == Done {
+					j.statemux.RLock()
+					state := j.state
+					j.statemux.RUnlock()
+					if state == Cancelled || state == Done {
 						return
 					}
 				}
@@ -319,20 +321,10 @@ func (j *job) SetValue(v interface{}) {
 	j.value = v
 }
 
-func (j *job) GetState() JobState {
+func (j *job) GetState() jobState {
+	j.statemux.RLock()
+	defer j.statemux.RUnlock()
 	return j.state
-}
-
-func (j *job) IsRunning() bool {
-	return j.state == RecurrentRunning
-}
-
-func (j *job) IsCancelled() bool {
-	return j.state == Cancelled
-}
-
-func (j *job) IsDone() bool {
-	return j.state == Done
 }
 
 func (j *job) GetInterruptedBy() (*task, interface{}) {

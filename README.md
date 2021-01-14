@@ -37,10 +37,10 @@ func (stream *stream) ReadOnStreamTask(j job.Job) (job.Init, job.Run, job.Finali
     return init, run, fin
 }
 ```
-The recurrent routine is running in an indefinite loop. It's a well-known concept of `for { select {  } }` statements in
+The recurrent routine is running in an indefinite loop. It represents well-known `for { select {  } }` statements in
 Go. The recurrent routine calls three special methods:
  * **.Tick()** - to proceed task execution.
- * **.Done()** - to finish task execution.
+ * **.Done()** - to finish task execution (or **.FinishJob()** to finish job execution as well).
  * **.Idle()** - to tell that a task has nothing to do, and as a result it might be finished by reaching the idle timeout.
 
 Tasks can assert some conditions, replacing `if err != nil { panic(err) }` by a more terse way:
@@ -66,7 +66,7 @@ to start off its job execution once the task is finished:
     mainJob.AddTask(imgResizer.SaveResizedImageTask)
     <-mainJob.Run()
 ```
-In the example above the job won't start until a network connection established. Any job can have only one oneshot task.
+In the example above the job won't start until a network connection established. A job can have only one oneshot task.
 
 For data sharing tasks should employ (although it's not an obligation) a ping/pong synchronization using two channels,
 where the first one is being used to receive data and the second one - to notify the sender that data processing is completed.
@@ -82,35 +82,41 @@ where the first one is being used to receive data and the second one - to notify
     }
 ```
 
+To prevent a task from being blocked for good, be sure to close all channels it's using in its finalization routine.
+
 ### Real life example
-Now when we have a basic understanding, let's put the given pattern to use and take a look at a real life example:
-the implementation of a reverse proxy working as layer 4 load balancer, a backend server resizing images and a simple
+Now, when you have a basic understanding, let's put the given pattern to use and take a look at a
+[real life example](https://github.com/AgentCoop/go-work-tcpbalancer):
+the implementation of a reverse proxy working as layer 4 load balancer, a backend server resizing images, and a simple
 client that would scan a specified directory for images and send them through the proxy server for resizing.
-The code will speak for itself, so that we will quickly get the idea of how to use the given pattern.
+The code will speak for itself, so that you will quickly get the idea of how to use the given pattern.
 
 ### API reference
 ##### Public functions
   * NewJob(value **interface{}**) ***job** - creates a new job with the given job value.
   * RegisterDefaultLogger(logger **Logger**) - registers a fallback logger for all jobs.
 ##### Job
-  * [_AddTask(job **JobTask**) ***TaskInfo**_](docs/job.md) - adds a new task to the job
-  * [_GetTaskByIndex(index **int**)_](docs/job.md) *task - returns a task by the given index.
+  * [_AddTask(job **JobTask**) ***task**_](docs/job.md) - adds a new task to the job
+  * [_GetTaskByIndex(index **int**) ***task**_](docs/job.md) - returns a task by the given index.
   * [_AddOneshotTask(job **JobTask**)_](docs/job.md) - adds an oneshot tasks to the job
-  * [_AddTaskWithIdleTimeout(job **JobTask**, timeout **time.Duration**) ***TaskInfo**_](docs/job.md) - adds a task with an idle timeout
-  * [_WithPrerequisites(sigs ...**<-chan struct{}**) ***Job**_](docs/job.md) - waits for the prerequisites to be met before running the job.
-  * [_WithTimeout(duration **time.Duration**) ***Job**_](docs/job.md) - sets run timeout for the job. 
-  * [_WasTimedOut() **bool**_](docs/job.md) - returns TRUE if the job was timed out.
-  * [_Run() **chan struct{}**_](docs/job.md) - runs the job.
-  * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs the job in background. An oneshot task required. 
-  * [_Cancel()_](docs/job.md) - cancels the job.
+  * [_AddTaskWithIdleTimeout(job **JobTask**, timeout **time.Duration**) ***task**_](docs/job.md) - adds a task with an idle timeout
+  * [_WithPrerequisites(sigs ...**<-chan struct{}**)_](docs/job.md) - waits for the prerequisites to be met before executing the job.
+  * [_WithTimeout(duration **time.Duration**)_](docs/job.md) - sets run timeout for the job. 
+  * [_Run() **chan struct{}**_](docs/job.md) - starts the execution of the tasks.
+  * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs job's tasks in background. An oneshot task is required.
+  A done signal is sent once the oneshot task is finished. The second time a done signal is being sent when the rest
+  of the tasks are finished or the job is cancelled.
+  * [_Cancel(**err interface{}**)_](docs/job.md) - cancels the job with the given error.
   * [_Finish()_](docs/job.md) - finishes the job.
   * [_TaskDoneNotify() **<-chan \*task**_](docs/job.md)
   * [_Log(level **int**) **chan<- interface{}**_](docs/job.md) - writes a log record using default or job's logger.
   * [_RegisterLogger(logger **Logger**)_](docs/job.md) - registers a job logger.
   * [_GetValue() **interface{}**_](docs/job.md) - returns a job value.
   * [_SetValue(v **interface{}**)_](docs/job.md) - sets a job value.
-  * [_GetInterruptedBy() (***TaskInfo, interface{}**)_](docs/job.md) - returns a task and an error that interrupted the job execution.
+  * [_GetInterruptedBy() (***task, interface{}**)_](docs/job.md) - returns a task and an error that interrupted the job execution.
   * [_GetState() **JobState**_](docs/job.md) - returns the job state.
+  *	[_TaskDoneNotify() **<-chan \*task**_](docs/job.md)
+  *	[_JobDoneNotify() **chan struct{}**_](docs/job.md)
 ##### Task
   * [_GetIndex() **int**_](docs/task.md) - returns task index. Oneshot tasks have predefined 0-index.
   * [_GetJob() **Job**_](docs/task.md) - returns a reference to the task's job.
@@ -119,11 +125,11 @@ The code will speak for itself, so that we will quickly get the idea of how to u
   * [_SetResult(result **interface{}**)_](docs/task.md) - sets task result.
   * [_Tick()_](docs/task.md)<sup>1</sup> - proceeds task execution. 
   * [_Done()_](docs/task.md)<sup>1</sup> - marks task as finished and stops its execution.
-  * [_FinishJob()_](docs/task.md) 
   * [_Idle()_](docs/task.md)<sup>1</sup> - do nothing. Being used for tasks having idle timeouts.
+  * [_FinishJob()_](docs/task.md) 
   * [_Assert(err **interface{}**)_](docs/task.md) - asserts that error has zero value.
   * [_AssertTrue(cond **bool**, err **string**)_](docs/task.md) - asserts that condition is evaluated to _true_, otherwise stops
-  task execution with the given error.
-  
+  * [_AssertNotNil(value **interface{}**)_](docs/task.md)
+ 
 ###### Footnotes:
  1. Being called by the recurrent routine.

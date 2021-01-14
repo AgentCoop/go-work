@@ -8,13 +8,15 @@ import (
 	"time"
 )
 
+type taskType int
+type taskState int
 type taskMap map[int]*task
 
 type task struct {
 	index       int
-	typ         TaskType
+	typ         taskType
 	statemux    sync.RWMutex
-	state       TaskState
+	state       taskState
 	lasttick    int64
 	idletime    int64
 	idleTimeout int64
@@ -29,7 +31,7 @@ type task struct {
 	finalize    Finalize
 }
 
-func newTask(job *job, typ TaskType, index int) *task {
+func newTask(job *job, typ taskType, index int) *task {
 	t := &task{
 		job:      job,
 		state:    PendingTask,
@@ -50,7 +52,7 @@ func (t *task) GetJob() Job {
 	return t.job
 }
 
-func (t *task) GetState() TaskState {
+func (t *task) GetState() taskState {
 	t.statemux.RLock()
 	defer t.statemux.RUnlock()
 	return t.state
@@ -131,14 +133,14 @@ func (t *task) thread(f func(), finish bool) {
 			t.state = FailedTask
 			t.job.cancel(t, err)
 		}
-		job.observerchan <- DoneSig
+		job.observerchan <- NotifySig
 	}()
 	f()
 }
 
 func (t *task) wasStoppped() bool {
-	t.job.stateMu.RLock()
-	defer t.job.stateMu.RUnlock()
+	t.job.statemux.RLock()
+	defer t.job.statemux.RUnlock()
 	switch {
 	case t.job.state == Cancelled, t.job.state == Done, atomic.LoadUint32(&t.job.failcount) > 0:
 		return true

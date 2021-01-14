@@ -12,15 +12,7 @@ import (
 var counter int
 var mu sync.Mutex
 
-func incCounterJob(j job.Job) (job.Init, job.Run, job.Finalize) {
-	return func(t job.Task) {  }, func(t job.Task) {
-		mu.Lock()
-		defer mu.Unlock()
-		counter++
-	}, nil
-}
-
-func squareJob(num int, sleep time.Duration) job.JobTask {
+func squareNumTask(num int, sleep time.Duration) job.JobTask {
 	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		return func(t job.Task) { }, func(t job.Task) {
 			if sleep > 0 { time.Sleep(sleep) }
@@ -31,7 +23,7 @@ func squareJob(num int, sleep time.Duration) job.JobTask {
 	}
 }
 
-func divideJob(num int, divider int, sleep time.Duration) job.JobTask {
+func divideNumTask(num int, divider int, sleep time.Duration) job.JobTask {
 	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		return func(t job.Task) {  }, func(t job.Task) {
 			if sleep > 0 {
@@ -46,7 +38,7 @@ func divideJob(num int, divider int, sleep time.Duration) job.JobTask {
 	}
 }
 
-func failedIOJob() job.JobTask {
+func failedIOTask() job.JobTask {
 	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		return func(t job.Task) { }, func(t job.Task) {
 			_, err := os.Open("foobar")
@@ -56,7 +48,7 @@ func failedIOJob() job.JobTask {
 	}
 }
 
-func sleepIncCounterJob(sleep time.Duration) job.JobTask {
+func sleepIncCounterTask(sleep time.Duration) job.JobTask {
 	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
 		return func(t job.Task) {  }, func(t job.Task) {
 			if sleep > 0 {
@@ -104,10 +96,10 @@ func TestDone(T *testing.T) {
 	nTasks := 50
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(sleepIncCounterJob(time.Microsecond * time.Duration(i)))
+		j.AddTask(sleepIncCounterTask(time.Microsecond * time.Duration(i)))
 	}
 	<-j.Run()
-	if ! j.IsDone() || counter != nTasks {
+	if j.GetState() != job.Done || counter != nTasks {
 		T.Fatalf("expected: state %s, counter %d; got: %s, %d\n",
 			job.Done, nTasks, j.GetState(), counter)
 	}
@@ -118,11 +110,11 @@ func TestCancel(T *testing.T) {
 	nTasks := 10
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(divideJob(9, 3, time.Microsecond * time.Duration(i)))
-		j.AddTask(divideJob(9, 0, time.Microsecond * time.Duration(2 * i)))
+		j.AddTask(divideNumTask(9, 3, time.Microsecond * time.Duration(i)))
+		j.AddTask(divideNumTask(9, 0, time.Microsecond * time.Duration(2 * i)))
 	}
 	<-j.Run()
-	if ! j.IsCancelled() {
+	if j.GetState() != job.Cancelled {
 		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
 	}
 
@@ -143,9 +135,9 @@ func TestCancel(T *testing.T) {
 			return nil, run, cancel
 		})
 	}
-	j.AddTask(divideJob(9, 0, time.Microsecond * 10))
+	j.AddTask(divideNumTask(9, 0, time.Microsecond * 10))
 	<-j.Run()
-	if ! j.IsCancelled() {
+	if j.GetState() != job.Cancelled {
 		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
 	}
 	// Allocate enough time for finalize routines to finish
@@ -158,23 +150,24 @@ func TestCancel(T *testing.T) {
 func TestTimeout(T *testing.T) {
 	// Must succeed
 	counter = 0
-	j := job.NewJob(nil).WithTimeout(200 * time.Millisecond)
+	j := job.NewJob(nil)
+	j.WithTimeout(200 * time.Millisecond)
 	for i := 0; i < 100; i++ {
-		j.AddTask(sleepIncCounterJob(time.Duration(i + 1) * time.Millisecond))
+		j.AddTask(sleepIncCounterTask(time.Duration(i + 1) * time.Millisecond))
 	}
 	<-j.Run()
-	if ! j.IsDone() || counter != 100 {
+	if j.GetState() != job.Done || counter != 100 {
 		T.Fatalf("expected counter 100, got %d\n", counter)
 	}
 	// Must be cancelled
 	counter = 0
 	j = job.NewJob(nil)
 	j.WithTimeout(20 * time.Millisecond)
-	task1 := j.AddTask(sleepIncCounterJob(10 * time.Millisecond))
-	task2 := j.AddTask(sleepIncCounterJob(99999 * time.Second)) // Must not block run method
+	task1 := j.AddTask(sleepIncCounterTask(10 * time.Millisecond))
+	task2 := j.AddTask(sleepIncCounterTask(99999 * time.Second)) // Must not block run method
 	<-j.Run()
 
-	if ! j.IsCancelled() || counter != 1 {
+	if j.GetState() != job.Cancelled || counter != 1 {
 		T.Fatalf("expected: state %s, counter 1; got %s %d\n", job.Cancelled, j.GetState(), counter)
 	}
 	if task1.GetState() != job.FinishedTask {
@@ -188,20 +181,20 @@ func TestTimeout(T *testing.T) {
 
 func TestOneshot(T *testing.T) {
 	j := job.NewJob(nil)
-	j.AddOneshotTask(divideJob(9,3, time.Microsecond * 50))
-	task1 := j.AddTask(squareJob(4, 0))
+	j.AddOneshotTask(divideNumTask(9,3, time.Microsecond * 50))
+	task1 := j.AddTask(squareNumTask(4, 0))
 	<-j.Run()
 	res := task1.GetResult()
-	if ! j.IsCancelled() && res != 16  {
+	if j.GetState() != job.Cancelled && res != 16  {
 		T.Fatalf("expected: state %s, task result %d; got: %s %v\n", job.Done, 16, j.GetState(), res)
 	}
 	// Failed oneshot task
 	j = job.NewJob(nil)
-	j.AddOneshotTask(divideJob(3,0, time.Microsecond * 50))
-	task1 = j.AddTask(squareJob(3, 0))
+	j.AddOneshotTask(divideNumTask(3,0, time.Microsecond * 50))
+	task1 = j.AddTask(squareNumTask(3, 0))
 	<-j.Run()
 	res = task1.GetResult()
-	if ! j.IsCancelled() && res != nil  {
+	if j.GetState() != job.Cancelled && res != nil  {
 		T.Fatalf("expected: state %s, task result %v; got: %s %v\n", job.Cancelled, 0, j.GetState(), res)
 	}
 }
@@ -229,7 +222,7 @@ func TestOneshotBg(T *testing.T) {
 		T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.OneshotRunning, 1, j.GetState(), counter)
 	}
 	select {
-	case <- j.GetDoneChan():
+	case <- j.JobDoneNotify():
 		if j.GetState() != job.Done || counter != 2 {
 			T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.Done, 2, j.GetState(), counter)
 		}
@@ -243,12 +236,12 @@ func TestAssert(T *testing.T) {
 	j := job.NewJob(nil)
 	failedTasks := make([]job.Task, 100)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(divideJob(9, 3, 0))
-		failedTasks[i] = j.AddTask(divideJob(9, 0, 0))
-		j.AddTask(divideJob(9, 9, 0))
+		j.AddTask(divideNumTask(9, 3, 0))
+		failedTasks[i] = j.AddTask(divideNumTask(9, 0, 0))
+		j.AddTask(divideNumTask(9, 9, 0))
 	}
 	<-j.Run()
-	if ! j.IsCancelled() {
+	if j.GetState() != job.Cancelled {
 		T.Fatalf("expected: state %s; got: state %s", job.Cancelled, j.GetState())
 	}
 	_, err := j.GetInterruptedBy()
@@ -256,10 +249,10 @@ func TestAssert(T *testing.T) {
 		T.Fatal()
 	}
 	j = job.NewJob(nil)
-	j.AddTask(failedIOJob())
-	j.AddTask(failedIOJob())
+	j.AddTask(failedIOTask())
+	j.AddTask(failedIOTask())
 	<-j.Run()
-	if ! j.IsCancelled() {
+	if j.GetState() != job.Cancelled {
 		T.Fatalf("expected: state %s; got: state %s", job.Cancelled, j.GetState())
 	}
 }
@@ -318,7 +311,7 @@ func TestCatchPanic(T *testing.T) {
 	})
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
-	if ! j.IsCancelled() && err != errUnexpected {
+	if j.GetState() != job.Cancelled && err != errUnexpected {
 		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), errUnexpected, err)
 	}
 	// Init panic
@@ -336,7 +329,7 @@ func TestCatchPanic(T *testing.T) {
 	})
 	<-j.Run()
 	_, err = j.GetInterruptedBy()
-	if ! j.IsCancelled() && err != errInitUnexpected {
+	if j.GetState() != job.Cancelled && err != errInitUnexpected {
 		T.Fatalf("expected: state %s, err %s; got: %s, %s", job.Cancelled, j.GetState(), errUnexpected, err)
 	}
 }

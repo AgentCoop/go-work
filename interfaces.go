@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-type JobState int
-type TaskType int
-type TaskState int
-
 type LogLevelMapItem struct {
 	ch         chan interface{}
 	rechandler LogRecordHandler
@@ -22,13 +18,15 @@ func NewLogLevelMapItem(ch chan interface{}, handler LogRecordHandler) *LogLevel
 }
 
 var (
-	ErrTaskIdleTimeout  = errors.New("task idle timeout")
-	ErrAssertZeroValue  = errors.New("go-work.Assert: zero value")
+	DefaultLogLevel    int
+	NotifySig          = struct{}{}
+	ErrTaskIdleTimeout = errors.New("go-work: task idling timed out")
+	ErrAssertZeroValue = errors.New("go-work.Assert: zero value")
 	ErrJobExecTimeout  = errors.New("go-work: job execution timed out")
 )
 
 const (
-	New JobState = iota
+	New jobState = iota
 	WaitingForPrereq
 	OneshotRunning
 	RecurrentRunning
@@ -37,33 +35,29 @@ const (
 	Done
 )
 
-func (s JobState) String() string {
+func (s jobState) String() string {
 	return [...]string{"New", "WaitingForPrereq", "Oneshot", "Recurrent", "Finalizing", "Cancelled", "Done"}[s]
 }
 
 const (
-	PendingTask TaskState = iota
+	PendingTask taskState = iota
 	RunningTask
 	FailedTask
 	FinishedTask
 )
 
-func (s TaskState) String() string {
+func (s taskState) String() string {
 	return [...]string{"Pending", "Running", "Failed", "Finished"}[s]
 }
 
 const (
-	Oneshot TaskType = iota
+	Oneshot taskType = iota
 	Recurrent
 )
 
-func (t TaskType) String() string {
+func (t taskType) String() string {
 	return [...]string{"Oneshot", "Recurrent"}[t]
 }
-
-var (
-	DoneSig = struct{}{}
-)
 
 // Task main routines
 type Init func(Task)
@@ -78,8 +72,8 @@ type Job interface {
 	GetTaskByIndex(index int) *task
 	AddOneshotTask(job JobTask)
 	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *task
-	WithPrerequisites(sigs ...<-chan struct{}) *job
-	WithTimeout(duration time.Duration) *job
+	WithPrerequisites(sigs ...<-chan struct{})
+	WithTimeout(duration time.Duration)
 	Run() chan struct{}
 	RunInBackground() <-chan struct{}
 	Cancel(err interface{})
@@ -88,19 +82,16 @@ type Job interface {
 	RegisterLogger(logger Logger)
 	GetValue() interface{}
 	SetValue(v interface{})
+	GetState() jobState
 	GetInterruptedBy() (*task, interface{})
-	GetState() JobState
 	TaskDoneNotify() <-chan *task
-	// Helper methods to GetState
-	IsRunning() bool
-	IsDone() bool
-	IsCancelled() bool
+	JobDoneNotify() chan struct{}
 }
 
 type Task interface {
 	GetIndex() int
 	GetJob() Job
-	GetState() TaskState
+	GetState() taskState
 	GetResult() interface{}
 	SetResult(result interface{})
 	Tick()
