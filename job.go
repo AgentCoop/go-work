@@ -9,12 +9,11 @@ import (
 type jobState int
 
 const (
-	dummyChanCapacity = 100
+	loggerChanCapacity = 100
 )
 
 var (
 	defaultLogger   = make(LogLevelMap)
-	dummyChan       = make(chan interface{}, dummyChanCapacity)
 )
 
 type job struct {
@@ -31,6 +30,7 @@ type job struct {
 	timeout       time.Duration
 	donechan      chan struct{}
 	observerchan  chan struct{}
+	logchan 	  chan interface{}
 	taskdonechan  chan *task
 	prereqWg      sync.WaitGroup
 	value         interface{}
@@ -110,6 +110,7 @@ func (j *job) init() {
 	// Observer's channel must never block a task.thread execution
 	j.observerchan = make(chan struct{}, 3 * len(j.taskMap))
 	j.taskdonechan = make(chan *task, len(j.taskMap))
+	j.logchan = make(chan interface{}, loggerChanCapacity)
 }
 
 func (j *job) prerun() {
@@ -294,16 +295,16 @@ func (j *job) Log(level int) chan<- interface{} {
 	}
 
 	if level > currlevel {
-		if len(dummyChan) == dummyChanCapacity { // Drain the channel before re-using it to prevent blocking
+		if len(j.logchan) == loggerChanCapacity { // Drain the channel before re-using it to prevent blocking
 			i := 0
-			for _ = range dummyChan {
+			for _ = range j.logchan {
 				i++
-				if i == dummyChanCapacity {
-					return dummyChan
+				if i == loggerChanCapacity {
+					return j.logchan
 				}
 			}
 		}
-		return dummyChan
+		return j.logchan
 	}
 
 	item, ok := m[level];
