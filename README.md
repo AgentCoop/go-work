@@ -8,6 +8,13 @@ for solving problems involving concurrent executions and their control. The Job 
 an alternative to [*content.Context*](https://golang.org/pkg/context/), though it's not meant to completely replace it.   
 
 ## Documentation
+### Why?
+I know, this is probably the most import question a skeptical programmer might ask. "Why should I learn how to use it,
+when we already have [*content.Context*](https://golang.org/pkg/context/), your solution looks like an over-engineered one".
+Well, because I have a weakness for Gimp, allow me to retort in a sarcastic way to such criticism:
+<img align="center" style="margin: 6px" src="https://raw.githubusercontent.com/AgentCoop/go-work/master/docs/funny-software-eng.png" alt='Balancer Schema' aria-label='' />
+But seriously, simplicity in software engineering is often a reciprocal for productivity. Never underestimate the benefits
+of going one abstraction level up.
 
 #### What is a Job?
 A job is a set of concurrently running tasks, execution of which depends on each other. If one task fails, the whole job
@@ -55,8 +62,12 @@ func (m *MyTask) MyTask(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
 Every failed assertion will result in the cancellation of job execution, and invocation of the finalization routines of all
 tasks of the job being cancelled.
 
-There are two types of tasks: an ordinary task (or recurrent), and oneshot task. The main purpose of an oneshot task is
-to start off its job execution once the task is finished:
+There are two types of tasks: an ordinary task (or recurrent), and an oneshot task. The main purpose of a oneshot task
+is to start off execution of other recurrent tasks waiting for the oneshot to be finished. You probably heard of such
+an approach in software design as [Contract by design](https://en.wikipedia.org/wiki/Design_by_contract). Here we have
+similar approach: in the example below recurrent tasks make an assumption that they will be running when a network
+connection is established and the goal of the oneshot task (_mngr.ConnectTask_) is to fulfill that precondition, providing
+reference to the connection in Job [value](#public-functions).
 ```go
     mainJob := j.NewJob(nil)
     mainJob.AddOneshotTask(mngr.ConnectTask)
@@ -66,7 +77,7 @@ to start off its job execution once the task is finished:
     mainJob.AddTask(imgResizer.SaveResizedImageTask)
     <-mainJob.Run()
 ```
-In the example above the job won't start until a network connection established. A job can have only one oneshot task.
+A job can have only one oneshot task.
 
 For data sharing tasks should employ (although it's not an obligation) a ping/pong synchronization using two channels,
 where the first one is being used to receive data and the second one - to notify the sender that data processing is completed.
@@ -93,7 +104,7 @@ The code will speak for itself, so that you will quickly get the idea of how to 
 
 ### API reference
 ##### Public functions
-  * NewJob(value **interface{}**) ***job** - creates a new job with the given job value.
+  * [_NewJob(value **interface{}**) ***job**_](#job-value) - creates a new job with the given job value.
   * RegisterDefaultLogger(logger **Logger**) - registers a fallback logger for all jobs.
 ##### Job
   * [_AddTask(job **JobTask**) ***task**_](docs/job.md) - adds a new task to the job
