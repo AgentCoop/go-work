@@ -12,7 +12,8 @@ an alternative to [*content.Context*](https://golang.org/pkg/context/), though i
 I know, this is probably the most import question a skeptical programmer might ask. "Why should I learn how to use it,
 when we already have [*content.Context*](https://golang.org/pkg/context/), your solution looks like an over-engineered one".
 Well, because I have a weakness for Gimp, allow me to retort in a sarcastic way to such criticism:
-<img align="center" style="margin: 6px" src="https://raw.githubusercontent.com/AgentCoop/go-work/master/docs/funny-software-eng.png" alt='Balancer Schema' aria-label='' />
+<img align="center" style="margin: 6px" src="https://raw.githubusercontent.com/AgentCoop/go-work/master/docs/funny-software-eng.png" alt='funny Software Engineering' aria-label='' />
+<br>
 But seriously, simplicity in software engineering is often a reciprocal for productivity. Never underestimate the benefits
 of going one abstraction level up.
 
@@ -64,7 +65,7 @@ tasks of the job being cancelled.
 
 There are two types of tasks: an ordinary task (or recurrent), and an oneshot task. The main purpose of a oneshot task
 is to start off execution of other recurrent tasks waiting for the oneshot to be finished. You probably heard of such
-an approach in software design as [Contract by design](https://en.wikipedia.org/wiki/Design_by_contract). Here we have
+an approach in software design as [Design by contract](https://en.wikipedia.org/wiki/Design_by_contract). Here we have
 similar approach: in the example below recurrent tasks make an assumption that they will be running when a network
 connection is established and the goal of the oneshot task (_mngr.ConnectTask_) is to fulfill that precondition, providing
 reference to the connection in Job [value](#public-functions).
