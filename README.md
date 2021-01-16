@@ -1,16 +1,16 @@
 ## Introduction
 Go has lots of synchronization mechanisms ranging from language primitives such as mutexes, channels, atomic functions,
-and to a more complicated components such as [*content.Context*](https://golang.org/pkg/context/). Unfortunately,
+and to a more complicated components such as [*context.Context*](https://golang.org/pkg/context/). Unfortunately,
 using them to solve problems arising in day-to-day programming might be quite challenging, especially for novices.
 
 The goal of the _Job design pattern_ and this implementation is to provide an easy-to-use and solid foundation
 for solving problems involving concurrent executions and their control. The Job pattern in many cases can be viewed as
-an alternative to [*content.Context*](https://golang.org/pkg/context/), though it's not meant to completely replace it.   
+an alternative to [*context.Context*](https://golang.org/pkg/context/), though it's not meant to completely replace it.   
 
 ## Documentation
 ### Why?
-I know, this is probably the most import question a skeptical programmer might ask. "Why should I learn how to use it,
-when we already have [*content.Context*](https://golang.org/pkg/context/), your solution looks like an over-engineered one".
+I know, this is probably the most frequent question a skeptical programmer might ask. "Why should I learn how to use it,
+when we already have [*context.Context*](https://golang.org/pkg/context/), your solution looks like an over-engineered one".
 Well, because I have a weakness for Gimp, allow me to retort in a sarcastic way to such criticism:
 <img align="center" style="margin: 6px" src="https://raw.githubusercontent.com/AgentCoop/go-work/master/docs/funny-software-eng.png" alt='funny Software Engineering' aria-label='' />
 <br>
@@ -53,7 +53,7 @@ Go. The recurrent routine calls three special methods:
 
 Tasks can assert some conditions, replacing `if err != nil { panic(err) }` by a more terse way:
 ```go
-func (m *MyTask) MyTask(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+func (m *MyTask) MyTask(j job.Job) (job.Init, job.Run, job.Finalize) {
     run := func(task *job.TaskInfo) {
         _, err := os.Open("badfile")
         task.Assert(err)
@@ -104,9 +104,10 @@ client that would scan a specified directory for images and send them through th
 The code will speak for itself, so that you will quickly get the idea of how to use the given pattern.
 
 ### API reference
-##### Public functions
+##### Public functions and variables
   * [_NewJob(value **interface{}**) ***job**_](#job-value) - creates a new job with the given job value.
   * RegisterDefaultLogger(logger **Logger**) - registers a fallback logger for all jobs.
+  * DefaultLogLevel **int**
 ##### Job
   * [_AddTask(job **JobTask**) ***task**_](docs/job.md) - adds a new task to the job
   * [_GetTaskByIndex(index **int**) ***task**_](docs/job.md) - returns a task by the given index.
@@ -116,19 +117,17 @@ The code will speak for itself, so that you will quickly get the idea of how to 
   * [_WithTimeout(duration **time.Duration**)_](docs/job.md) - sets run timeout for the job. 
   * [_Run() **chan struct{}**_](docs/job.md) - starts the execution of the tasks.
   * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs job's tasks in background. An oneshot task is required.
-  A done signal is sent once the oneshot task is finished. The second time a done signal is being sent when the rest
-  of the tasks are finished or the job is cancelled.
+  Receives a signal from the returned channel once the oneshot task is finished.
   * [_Cancel(**err interface{}**)_](docs/job.md) - cancels the job with the given error.
   * [_Finish()_](docs/job.md) - finishes the job.
-  * [_TaskDoneNotify() **<-chan \*task**_](docs/job.md)
-  * [_Log(level **int**) **chan<- interface{}**_](docs/job.md) - writes a log record using default or job's logger.
+  * [_Log(level **int**) **chan<- interface{}**_](docs/job.md) - writes a log record using fallback or job's logger.
   * [_RegisterLogger(logger **Logger**)_](docs/job.md) - registers a job logger.
   * [_GetValue() **interface{}**_](docs/job.md) - returns a job value.
   * [_SetValue(v **interface{}**)_](docs/job.md) - sets a job value.
   * [_GetInterruptedBy() (***task, interface{}**)_](docs/job.md) - returns a task and an error that interrupted the job execution.
   * [_GetState() **JobState**_](docs/job.md) - returns the job state.
-  *	[_TaskDoneNotify() **<-chan \*task**_](docs/job.md)
-  *	[_JobDoneNotify() **chan struct{}**_](docs/job.md)
+  *	[_TaskDoneNotify() **<-chan \*task**_](docs/job.md) -  receives **\*task** from the returned channel when a task is finished.
+  *	[_JobDoneNotify() **chan struct{}**_](docs/job.md)- receives a signal from the returned channel when the job is finished
 ##### Task
   * [_GetIndex() **int**_](docs/task.md) - returns task index. Oneshot tasks have predefined 0-index.
   * [_GetJob() **Job**_](docs/task.md) - returns a reference to the task's job.
