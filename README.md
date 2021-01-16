@@ -27,6 +27,7 @@ execution fails too.
     <-myjob.Run()
     // Let's process the result
 ```
+Here is a simple example: https://play.golang.org/p/vec2ybo3ti9
 
 #### What is a Task?
 A single task consists of the three routines: an initialization routine, a recurrent routine, and a finalization routine:
