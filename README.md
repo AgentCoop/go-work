@@ -27,7 +27,8 @@ execution fails too.
     <-myjob.Run()
     // Let's process the result
 ```
-Here is a simple example: https://play.golang.org/p/vec2ybo3ti9
+Here is a simple example: https://play.golang.org/p/vec2ybo3ti9. You can compare *context.Context* [example](https://golang.org/pkg/context/#example_WithCancel)
+with the same implementation [using Job](https://play.golang.org/p/ge2FUO7a6WU).
 
 #### What is a Task?
 A single task consists of the three routines: an initialization routine, a recurrent routine, and a finalization routine:
@@ -114,7 +115,6 @@ The code will speak for itself, so that you will quickly get the idea of how to 
   * [_GetTaskByIndex(index **int**) ***task**_](docs/job.md) - returns a task by the given index.
   * [_AddOneshotTask(job **JobTask**)_](docs/job.md) - adds an oneshot tasks to the job
   * [_AddTaskWithIdleTimeout(job **JobTask**, timeout **time.Duration**) ***task**_](docs/job.md) - adds a task with an idle timeout
-  * [_WithPrerequisites(sigs ...**<-chan struct{}**)_](docs/job.md) - waits for the prerequisites to be met before executing the job.
   * [_WithTimeout(duration **time.Duration**)_](docs/job.md) - sets run timeout for the job. 
   * [_Run() **chan struct{}**_](docs/job.md) - starts the execution of the tasks.
   * [_RunInBackground() **<-chan struct{}**_](docs/job.md) - runs job's tasks in background. An oneshot task is required.

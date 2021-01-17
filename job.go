@@ -32,7 +32,6 @@ type job struct {
 	observerchan  chan struct{}
 	logchan 	  chan interface{}
 	taskdonechan  chan *task
-	prereqWg      sync.WaitGroup
 	value         interface{}
 	stoponce      sync.Once
 	interrby      *task // a task interrupted the job execution
@@ -84,24 +83,6 @@ func (j *job) JobDoneNotify() chan struct{} {
 	return j.donechan
 }
 
-// A job won't start until all its prerequisites are met
-func (j *job) WithPrerequisites(sigs ...<-chan struct{}) {
-	j.state = WaitingForPrereq
-	j.prereqWg.Add(len(sigs))
-	for _, sig := range sigs {
-		s := sig
-		go func() {
-			for {
-				select {
-				case <-s:
-					j.prereqWg.Done()
-					return
-				}
-			}
-		}()
-	}
-}
-
 func (j *job) WithTimeout(t time.Duration) {
 	j.timeout = t
 }
@@ -117,24 +98,16 @@ func (j *job) prerun() {
 	// Start timer that will finalize and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
-			ch := time.After(j.timeout)
-			for {
-				select {
-				case <-ch:
-					j.statemux.RLock()
-					state := j.state
-					j.statemux.RUnlock()
-					switch {
-					case state == RecurrentRunning, state == OneshotRunning:
-						j.Cancel(ErrJobExecTimeout)
-					}
-					return
-				}
+			timer := time.After(j.timeout)
+			<-timer
+			j.statemux.RLock()
+			state := j.state
+			j.statemux.RUnlock()
+			switch {
+			case state == RecurrentRunning, state == OneshotRunning:
+				j.Cancel(ErrJobExecTimeout)
 			}
 		}()
-	}
-	if j.state == WaitingForPrereq {
-		j.prereqWg.Wait()
 	}
 }
 

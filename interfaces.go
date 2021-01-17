@@ -27,7 +27,6 @@ var (
 
 const (
 	New jobState = iota
-	WaitingForPrereq
 	OneshotRunning
 	RecurrentRunning
 	Finalizing
@@ -36,7 +35,7 @@ const (
 )
 
 func (s jobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Oneshot", "Recurrent", "Finalizing", "Cancelled", "Done"}[s]
+	return [...]string{"New", "Oneshot", "Recurrent", "Finalizing", "Cancelled", "Done"}[s]
 }
 
 const (
@@ -72,7 +71,6 @@ type Job interface {
 	GetTaskByIndex(index int) *task
 	AddOneshotTask(job JobTask)
 	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *task
-	WithPrerequisites(sigs ...<-chan struct{})
 	WithTimeout(duration time.Duration)
 	Run() chan struct{}
 	RunInBackground() <-chan struct{}

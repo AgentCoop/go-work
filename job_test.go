@@ -74,23 +74,6 @@ func signalAfter(t time.Duration, fn func()) chan struct{} {
 	return ch
 }
 
-func TestPrereq(T *testing.T) {
-	var counter int
-	p1 := signalAfter(10 * time.Millisecond, func() { counter++ })
-	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
-	j := job.NewJob(nil)
-	j.WithPrerequisites(p1, p2)
-	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		return func(t job.Task) {}, func(t job.Task) {
-				if counter != 2 {
-					T.Fatalf("got %d, expected %d\n", counter, 2)
-				}
-				j.Cancel(nil)
-			}, nil
-	})
-	<-j.Run()
-}
-
 func TestDone(T *testing.T) {
 	counter = 0
 	nTasks := 50
