@@ -1,7 +1,7 @@
 package job
 
 import (
-	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -101,9 +101,9 @@ func (t *task) Assert(err interface{}) {
 	}
 }
 
-func (t *task) AssertTrue(cond bool, err string) {
+func (t *task) AssertTrue(cond bool, err interface{}) {
 	if cond {
-		err := errors.New(err)
+		//err := errors.New(err)
 		t.job.cancel(t, err)
 		panic(err)
 	}
@@ -129,6 +129,7 @@ func (t *task) thread(f func(), finish bool) {
 			atomic.AddUint32(&job.finishedcount, 1)
 		}
 		if err := recover(); err != nil {
+			fmt.Printf("err: %v\n", err)
 			atomic.AddUint32(&job.failcount, 1)
 			t.state = FailedTask
 			t.job.cancel(t, err)

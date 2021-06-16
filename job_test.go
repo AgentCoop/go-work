@@ -88,6 +88,27 @@ func TestDone(T *testing.T) {
 	}
 }
 
+func TestDoneWithOneshot(T *testing.T) {
+	j := job.NewJob(nil)
+	j.AddOneshotTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.Task) {
+			task.Done()
+		}
+		return nil, run, nil
+	})
+	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.Task) {
+			task.Done()
+		}
+		return nil, run, nil
+	})
+	<-j.Run()
+	if j.GetState() != job.Done {
+		T.Fatalf("expected: state %s; got: %s\n",
+			job.Done, j.GetState())
+	}
+}
+
 func TestCancel(T *testing.T) {
 	counter = 0
 	nTasks := 10

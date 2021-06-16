@@ -13,29 +13,33 @@ const (
 )
 
 var (
-	defaultLogger   = make(LogLevelMap)
+	defaultLogger = make(LogLevelMap)
 )
 
+type ErrWrapper func(err interface{}) interface{}
+
 type job struct {
-	taskMap       taskMap
-	logLevelMap   LogLevelMap
-	logLevel      int
-	failcount     uint32
-	finishedcount uint32
-	statemux      sync.RWMutex
-	state         jobState
-	runonce       sync.Once
-	finonce       sync.Once
-	runInBg       bool
-	timeout       time.Duration
-	donechan      chan struct{}
-	observerchan  chan struct{}
-	logchan 	  chan interface{}
-	taskdonechan  chan *task
-	value         interface{}
-	stoponce      sync.Once
-	interrby      *task // a task interrupted the job execution
-	interrerr     interface{}
+	taskMap        taskMap
+	logLevelMap    LogLevelMap
+	logLevel       int
+	failcount      uint32
+	finishedcount  uint32
+	statemux       sync.RWMutex
+	state          jobState
+	runonce        sync.Once
+	finonce        sync.Once
+	runInBg        bool
+	timeout        time.Duration
+	donechan       chan struct{}
+	observerchan   chan struct{}
+	logchan        chan interface{}
+	taskdonechan   chan *task
+	value          interface{}
+	stoponce       sync.Once
+	interrby       *task // a task interrupted the job execution
+	interrerr      interface{}
+	errWrapper     ErrWrapper
+	shutdowHandler func(interface{})
 }
 
 func (j *job) createTask(taskGen JobTask, index int, typ taskType) *task {
@@ -53,7 +57,7 @@ func (j *job) createTask(taskGen JobTask, index int, typ taskType) *task {
 }
 
 func (j *job) AddTask(task JobTask) *task {
-	return j.createTask(task, 1 + len(j.taskMap), Recurrent)
+	return j.createTask(task, 1+len(j.taskMap), Recurrent)
 }
 
 func (j *job) GetTaskByIndex(index int) *task {
@@ -61,7 +65,7 @@ func (j *job) GetTaskByIndex(index int) *task {
 }
 
 func (j *job) AddTaskWithIdleTimeout(task JobTask, timeout time.Duration) *task {
-	info := j.createTask(task, 1 + len(j.taskMap), Recurrent)
+	info := j.createTask(task, 1+len(j.taskMap), Recurrent)
 	info.idleTimeout = int64(timeout)
 	return info
 }
@@ -87,9 +91,17 @@ func (j *job) WithTimeout(t time.Duration) {
 	j.timeout = t
 }
 
+func (j *job) WithErrorWrapper(wrapper ErrWrapper) {
+	j.errWrapper = wrapper
+}
+
+func (j *job) WithShutdown(handler func(interface{})) {
+	j.shutdowHandler = handler
+}
+
 func (j *job) init() {
 	// Observer's channel must never block a task.thread execution
-	j.observerchan = make(chan struct{}, 3 * len(j.taskMap))
+	j.observerchan = make(chan struct{}, 3*len(j.taskMap))
 	j.taskdonechan = make(chan *task, len(j.taskMap))
 	j.logchan = make(chan interface{}, loggerChanCapacity)
 }
@@ -114,7 +126,7 @@ func (j *job) prerun() {
 func (j *job) observer() {
 	for {
 		select {
-		case <- j.observerchan:
+		case <-j.observerchan:
 			fcount := atomic.LoadUint32(&j.finishedcount)
 			j.statemux.RLock()
 			state := j.state
@@ -148,11 +160,15 @@ func (j *job) runOneshot() {
 }
 
 func (j *job) runRecurrent() {
-	if j.state == Cancelled { return }
+	if j.state == Cancelled {
+		return
+	}
 	j.state = RecurrentRunning
 
 	for i, task := range j.taskMap {
-		if i == 0 { continue } // skip oneshot task
+		if i == 0 {
+			continue
+		} // skip oneshot task
 		if task.init != nil {
 			task.thread(func() {
 				task.init(task)
@@ -160,10 +176,14 @@ func (j *job) runRecurrent() {
 		}
 	}
 
-	if j.state != RecurrentRunning { return }
+	if j.state != RecurrentRunning {
+		return
+	}
 
 	for i, task := range j.taskMap {
-		if i == 0 { continue }
+		if i == 0 {
+			continue
+		}
 		task.body()
 	}
 }
@@ -216,7 +236,15 @@ func (j *job) finalize(state jobState) {
 func (j *job) cancel(cancelledby *task, err interface{}) {
 	j.finonce.Do(func() {
 		j.interrby = cancelledby
-		j.interrerr = err
+		switch {
+		case j.errWrapper != nil:
+			j.interrerr = j.errWrapper(err)
+		default:
+			j.interrerr = err
+		}
+		if j.shutdowHandler != nil {
+			j.shutdowHandler(j.interrerr)
+		}
 		j.finalize(Cancelled)
 	})
 }
@@ -240,7 +268,7 @@ func (j *job) RegisterLogger(logger Logger) {
 		go func() {
 			for {
 				select {
-				case entry := <- logchan:
+				case entry := <-logchan:
 					handler(entry, level)
 				default:
 					j.statemux.RLock()
@@ -280,7 +308,7 @@ func (j *job) Log(level int) chan<- interface{} {
 		return j.logchan
 	}
 
-	item, ok := m[level];
+	item, ok := m[level]
 	if !ok {
 		panic("invalid log level")
 	}

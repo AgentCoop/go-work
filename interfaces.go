@@ -72,6 +72,8 @@ type Job interface {
 	AddOneshotTask(job JobTask)
 	AddTaskWithIdleTimeout(job JobTask, timeout time.Duration) *task
 	WithTimeout(duration time.Duration)
+	WithShutdown(func(interface{}))
+	WithErrorWrapper(wrapper ErrWrapper)
 	Run() chan struct{}
 	RunInBackground() <-chan struct{}
 	Cancel(err interface{})
@@ -97,7 +99,7 @@ type Task interface {
 	Idle()
 	FinishJob()
 	Assert(err interface{})
-	AssertTrue(cond bool, err string)
+	AssertTrue(cond bool, err interface{})
 	AssertNotNil(value interface{})
 }
 
@@ -108,22 +110,4 @@ func NewJob(value interface{}) *job {
 	j.taskMap = make(taskMap)
 	j.donechan = make(chan struct{}, 1)
 	return j
-}
-
-func RegisterDefaultLogger(logger Logger) {
-	m := logger()
-	defaultLogger = m
-	for level, item := range m {
-		logchan := item.ch
-		handler := item.rechandler
-		l := level
-		go func() {
-			for {
-				select {
-				case entry := <- logchan:
-					handler(entry, l)
-				}
-			}
-		}()
-	}
 }
