@@ -1,7 +1,6 @@
 package job
 
 import (
-	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -129,7 +128,6 @@ func (t *task) thread(f func(), finish bool) {
 			atomic.AddUint32(&job.finishedcount, 1)
 		}
 		if err := recover(); err != nil {
-			fmt.Printf("err: %v\n", err)
 			atomic.AddUint32(&job.failcount, 1)
 			t.state = FailedTask
 			t.job.cancel(t, err)

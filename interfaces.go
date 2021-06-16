@@ -5,20 +5,7 @@ import (
 	"time"
 )
 
-type LogLevelMapItem struct {
-	ch         chan interface{}
-	rechandler LogRecordHandler
-}
-type LogRecordHandler func(entry interface{}, level int)
-type LogLevelMap map[int]*LogLevelMapItem
-type Logger func() LogLevelMap
-
-func NewLogLevelMapItem(ch chan interface{}, handler LogRecordHandler) *LogLevelMapItem {
-	return &LogLevelMapItem{ch, handler}
-}
-
 var (
-	DefaultLogLevel    int
 	NotifySig          = struct{}{}
 	ErrTaskIdleTimeout = errors.New("go-work: task idling timed out")
 	ErrAssertZeroValue = errors.New("go-work.Assert: zero value")
@@ -78,8 +65,6 @@ type Job interface {
 	RunInBackground() <-chan struct{}
 	Cancel(err interface{})
 	Finish()
-	Log(level int) chan<- interface{}
-	RegisterLogger(logger Logger)
 	GetValue() interface{}
 	SetValue(v interface{})
 	GetState() jobState

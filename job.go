@@ -7,20 +7,10 @@ import (
 )
 
 type jobState int
-
-const (
-	loggerChanCapacity = 100
-)
-
-var (
-	defaultLogger = make(LogLevelMap)
-)
-
 type ErrWrapper func(err interface{}) interface{}
 
 type job struct {
 	taskMap        taskMap
-	logLevelMap    LogLevelMap
 	logLevel       int
 	failcount      uint32
 	finishedcount  uint32
@@ -32,7 +22,6 @@ type job struct {
 	timeout        time.Duration
 	donechan       chan struct{}
 	observerchan   chan struct{}
-	logchan        chan interface{}
 	taskdonechan   chan *task
 	value          interface{}
 	stoponce       sync.Once
@@ -103,7 +92,6 @@ func (j *job) init() {
 	// Observer's channel must never block a task.thread execution
 	j.observerchan = make(chan struct{}, 3*len(j.taskMap))
 	j.taskdonechan = make(chan *task, len(j.taskMap))
-	j.logchan = make(chan interface{}, loggerChanCapacity)
 }
 
 func (j *job) prerun() {
@@ -257,62 +245,6 @@ func (j *job) Finish() {
 	j.finonce.Do(func() {
 		j.finalize(Done)
 	})
-}
-
-func (j *job) RegisterLogger(logger Logger) {
-	m := logger()
-	j.logLevelMap = m
-	for level, item := range m {
-		logchan := item.ch
-		handler := item.rechandler
-		go func() {
-			for {
-				select {
-				case entry := <-logchan:
-					handler(entry, level)
-				default:
-					j.statemux.RLock()
-					state := j.state
-					j.statemux.RUnlock()
-					if state == Cancelled || state == Done {
-						return
-					}
-				}
-			}
-		}()
-	}
-}
-
-func (j *job) Log(level int) chan<- interface{} {
-	var m LogLevelMap
-	var currlevel int
-
-	if j.logLevelMap != nil {
-		m = j.logLevelMap
-		currlevel = j.logLevel
-	} else {
-		m = defaultLogger
-		currlevel = DefaultLogLevel
-	}
-
-	if level > currlevel {
-		if len(j.logchan) == loggerChanCapacity { // Drain the channel before re-using it to prevent blocking
-			i := 0
-			for _ = range j.logchan {
-				i++
-				if i == loggerChanCapacity {
-					return j.logchan
-				}
-			}
-		}
-		return j.logchan
-	}
-
-	item, ok := m[level]
-	if !ok {
-		panic("invalid log level")
-	}
-	return item.ch
 }
 
 func (j *job) GetValue() interface{} {
