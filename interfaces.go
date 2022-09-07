@@ -45,15 +45,15 @@ func (t taskType) String() string {
 	return [...]string{"Oneshot", "Recurrent"}[t]
 }
 
-// Task main routines
-type Init func(Task)
-type Run func(Task)
-type Finalize func(Task)
+// TaskInterface main routines
+type Init func(TaskInterface)
+type Run func(TaskInterface)
+type Finalize func(TaskInterface)
 
-type JobTask func(j Job) (Init, Run, Finalize)
+type JobTask func(j JobInterface) (Init, Run, Finalize)
 type OneshotTask JobTask
 
-type Job interface {
+type JobInterface interface {
 	AddTask(job JobTask) *task
 	GetTaskByIndex(index int) *task
 	AddOneshotTask(job JobTask)
@@ -73,9 +73,9 @@ type Job interface {
 	JobDoneNotify() chan struct{}
 }
 
-type Task interface {
-	GetIndex() int
-	GetJob() Job
+type TaskInterface interface {
+	Index() int
+	GetJob() JobInterface
 	GetState() taskState
 	GetResult() interface{}
 	SetResult(result interface{})

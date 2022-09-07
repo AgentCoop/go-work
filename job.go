@@ -36,6 +36,13 @@ func (j *job) createTask(taskGen JobTask, index int, typ taskType) *task {
 	init, run, fin := taskGen(j)
 	task.init = init
 	task.finalize = fin
+	// In some cases run can be missed.
+	// For instance for tasks having only init procedures.
+	if run == nil {
+		run = func(t TaskInterface) {
+			t.Done()
+		}
+	}
 	task.body = func() {
 		go task.thread(func() {
 			task.taskLoop(run)

@@ -13,9 +13,11 @@ var counter int
 var mu sync.Mutex
 
 func squareNumTask(num int, sleep time.Duration) job.JobTask {
-	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		return func(t job.Task) { }, func(t job.Task) {
-			if sleep > 0 { time.Sleep(sleep) }
+	return func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		return func(t job.TaskInterface) {}, func(t job.TaskInterface) {
+			if sleep > 0 {
+				time.Sleep(sleep)
+			}
 			squaredNum := num * num
 			t.SetResult(squaredNum)
 			t.Done()
@@ -24,8 +26,8 @@ func squareNumTask(num int, sleep time.Duration) job.JobTask {
 }
 
 func divideNumTask(num int, divider int, sleep time.Duration) job.JobTask {
-	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		return func(t job.Task) {  }, func(t job.Task) {
+	return func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		return func(t job.TaskInterface) {}, func(t job.TaskInterface) {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
@@ -39,8 +41,8 @@ func divideNumTask(num int, divider int, sleep time.Duration) job.JobTask {
 }
 
 func failedIOTask() job.JobTask {
-	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		return func(t job.Task) { }, func(t job.Task) {
+	return func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		return func(t job.TaskInterface) {}, func(t job.TaskInterface) {
 			_, err := os.Open("foobar")
 			t.Assert(err)
 			t.Done()
@@ -49,8 +51,8 @@ func failedIOTask() job.JobTask {
 }
 
 func sleepIncCounterTask(sleep time.Duration) job.JobTask {
-	return func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		return func(t job.Task) {  }, func(t job.Task) {
+	return func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		return func(t job.TaskInterface) {}, func(t job.TaskInterface) {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
@@ -90,14 +92,14 @@ func TestDone(T *testing.T) {
 
 func TestDoneWithOneshot(T *testing.T) {
 	j := job.NewJob(nil)
-	j.AddOneshotTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(task job.Task) {
+	j.AddOneshotTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.TaskInterface) {
 			task.Done()
 		}
 		return nil, run, nil
 	})
-	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(task job.Task) {
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.TaskInterface) {
 			task.Done()
 		}
 		return nil, run, nil
@@ -114,8 +116,8 @@ func TestCancel(T *testing.T) {
 	nTasks := 10
 	j := job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(divideNumTask(9, 3, time.Microsecond * time.Duration(i)))
-		j.AddTask(divideNumTask(9, 0, time.Microsecond * time.Duration(2 * i)))
+		j.AddTask(divideNumTask(9, 3, time.Microsecond*time.Duration(i)))
+		j.AddTask(divideNumTask(9, 0, time.Microsecond*time.Duration(2*i)))
 	}
 	<-j.Run()
 	if j.GetState() != job.Cancelled {
@@ -126,12 +128,12 @@ func TestCancel(T *testing.T) {
 	nTasks = 10
 	j = job.NewJob(nil)
 	for i := 0; i < nTasks; i++ {
-		j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-			run := func(t job.Task) {
+		j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+			run := func(t job.TaskInterface) {
 				//time.Sleep(time.Millisecond)
 				t.Done()
 			}
-			cancel := func(task job.Task) {
+			cancel := func(task job.TaskInterface) {
 				mu.Lock()
 				defer mu.Unlock()
 				counter++
@@ -139,7 +141,7 @@ func TestCancel(T *testing.T) {
 			return nil, run, cancel
 		})
 	}
-	j.AddTask(divideNumTask(9, 0, time.Microsecond * 10))
+	j.AddTask(divideNumTask(9, 0, time.Microsecond*10))
 	<-j.Run()
 	if j.GetState() != job.Cancelled {
 		T.Fatalf("expected: state %s; got: %s\n", job.Cancelled, j.GetState())
@@ -157,7 +159,7 @@ func TestTimeout(T *testing.T) {
 	j := job.NewJob(nil)
 	j.WithTimeout(200 * time.Millisecond)
 	for i := 0; i < 100; i++ {
-		j.AddTask(sleepIncCounterTask(time.Duration(i + 1) * time.Millisecond))
+		j.AddTask(sleepIncCounterTask(time.Duration(i+1) * time.Millisecond))
 	}
 	<-j.Run()
 	if j.GetState() != job.Done || counter != 100 {
@@ -182,39 +184,38 @@ func TestTimeout(T *testing.T) {
 	}
 }
 
-
 func TestOneshot(T *testing.T) {
 	j := job.NewJob(nil)
-	j.AddOneshotTask(divideNumTask(9,3, time.Microsecond * 50))
+	j.AddOneshotTask(divideNumTask(9, 3, time.Microsecond*50))
 	task1 := j.AddTask(squareNumTask(4, 0))
 	<-j.Run()
 	res := task1.GetResult()
-	if j.GetState() != job.Cancelled && res != 16  {
+	if j.GetState() != job.Cancelled && res != 16 {
 		T.Fatalf("expected: state %s, task result %d; got: %s %v\n", job.Done, 16, j.GetState(), res)
 	}
 	// Failed oneshot task
 	j = job.NewJob(nil)
-	j.AddOneshotTask(divideNumTask(3,0, time.Microsecond * 50))
+	j.AddOneshotTask(divideNumTask(3, 0, time.Microsecond*50))
 	task1 = j.AddTask(squareNumTask(3, 0))
 	<-j.Run()
 	res = task1.GetResult()
-	if j.GetState() != job.Cancelled && res != nil  {
+	if j.GetState() != job.Cancelled && res != nil {
 		T.Fatalf("expected: state %s, task result %v; got: %s %v\n", job.Cancelled, 0, j.GetState(), res)
 	}
 }
 
 func TestOneshotBg(T *testing.T) {
 	j := job.NewJob(nil)
-	j.AddOneshotTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(t job.Task) {
+	j.AddOneshotTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(t job.TaskInterface) {
 			time.Sleep(time.Millisecond * 10)
 			counter = 1
 			t.Done()
 		}
 		return nil, run, nil
 	})
-	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(t job.Task) {
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(t job.TaskInterface) {
 			time.Sleep(time.Millisecond * 5)
 			counter = 2
 			t.Done()
@@ -226,7 +227,7 @@ func TestOneshotBg(T *testing.T) {
 		T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.OneshotRunning, 1, j.GetState(), counter)
 	}
 	select {
-	case <- j.JobDoneNotify():
+	case <-j.JobDoneNotify():
 		if j.GetState() != job.Done || counter != 2 {
 			T.Fatalf("expected: state %s, counter %d; got: %s %d\n", job.Done, 2, j.GetState(), counter)
 		}
@@ -238,7 +239,7 @@ func TestAssert(T *testing.T) {
 	counter = 0
 	nTasks := 100
 	j := job.NewJob(nil)
-	failedTasks := make([]job.Task, 100)
+	failedTasks := make([]job.TaskInterface, 100)
 	for i := 0; i < nTasks; i++ {
 		j.AddTask(divideNumTask(9, 3, 0))
 		failedTasks[i] = j.AddTask(divideNumTask(9, 0, 0))
@@ -264,17 +265,17 @@ func TestAssert(T *testing.T) {
 func TestIdleTimedout(T *testing.T) {
 	j := job.NewJob(nil)
 	doneTimer := time.After(time.Millisecond * 31)
-	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(task job.Task) {
+	j.AddTaskWithIdleTimeout(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.TaskInterface) {
 			select {
-			case <- doneTimer:
+			case <-doneTimer:
 				task.Done()
 			default:
 				task.Idle()
 			}
 		}
 		return nil, run, nil
-	}, time.Millisecond * 29)
+	}, time.Millisecond*29)
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
 	if j.GetState() != job.Cancelled && err != job.ErrTaskIdleTimeout {
@@ -285,17 +286,17 @@ func TestIdleTimedout(T *testing.T) {
 func TestIdle(T *testing.T) {
 	j := job.NewJob(nil)
 	doneTimer := time.After(time.Millisecond * 19)
-	j.AddTaskWithIdleTimeout(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(task job.Task) {
+	j.AddTaskWithIdleTimeout(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.TaskInterface) {
 			select {
-			case <- doneTimer:
+			case <-doneTimer:
 				task.Done()
 			default:
 				task.Idle()
 			}
 		}
 		return nil, run, nil
-	}, time.Millisecond * 21)
+	}, time.Millisecond*21)
 	<-j.Run()
 	_, err := j.GetInterruptedBy()
 	if j.GetState() != job.Done && err != nil {
@@ -306,8 +307,8 @@ func TestIdle(T *testing.T) {
 func TestCatchPanic(T *testing.T) {
 	var errUnexpected = errors.New("Unexpected error")
 	j := job.NewJob(nil)
-	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		run := func(task job.Task) {
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		run := func(task job.TaskInterface) {
 			time.Sleep(time.Millisecond * 10)
 			panic(errUnexpected)
 		}
@@ -321,11 +322,11 @@ func TestCatchPanic(T *testing.T) {
 	// Init panic
 	var errInitUnexpected = errors.New("Init unexpected error")
 	j = job.NewJob(nil)
-	j.AddTask(func(j job.Job) (job.Init, job.Run, job.Finalize) {
-		init := func(task job.Task) {
+	j.AddTask(func(j job.JobInterface) (job.Init, job.Run, job.Finalize) {
+		init := func(task job.TaskInterface) {
 			panic(errInitUnexpected)
 		}
-		run := func(task job.Task) {
+		run := func(task job.TaskInterface) {
 			time.Sleep(time.Millisecond * 10)
 			panic(errUnexpected)
 		}

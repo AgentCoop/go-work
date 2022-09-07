@@ -43,11 +43,11 @@ func newTask(job *job, typ taskType, index int) *task {
 	return t
 }
 
-func (t *task) GetIndex() int {
+func (t *task) Index() int {
 	return t.index
 }
 
-func (t *task) GetJob() Job {
+func (t *task) GetJob() JobInterface {
 	return t.job
 }
 
@@ -155,18 +155,20 @@ func (task *task) taskLoop(run Run) {
 	task.tickchan <- struct{}{}
 	for {
 		select {
-		case <- task.tickchan:
+		case <-task.tickchan:
 			task.lasttick = time.Now().UnixNano()
-			if task.wasStoppped() { return }
+			if task.wasStoppped() {
+				return
+			}
 			run(task)
-		case <- task.donechan:
+		case <-task.donechan:
 			task.lasttick = time.Now().UnixNano()
 			return
-		case <- task.idlechan:
+		case <-task.idlechan:
 			switch {
 			case task.wasStoppped():
 				return
-			case task.idleTimeout > 0 && task.idletime - task.lasttick >= task.idleTimeout:
+			case task.idleTimeout > 0 && task.idletime-task.lasttick >= task.idleTimeout:
 				task.job.cancel(task, ErrTaskIdleTimeout)
 				return
 			default:
